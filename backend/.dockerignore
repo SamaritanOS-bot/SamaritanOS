@@ -1,0 +1,11 @@
+__pycache__
+*.pyc
+.env
+*.log
+*.db
+*.sqlite
+chain_last_output.json
+dry_run_*.txt
+.git
+.claude
+venv
