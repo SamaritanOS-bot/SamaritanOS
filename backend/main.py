@@ -1818,19 +1818,39 @@ def _extract_post_cta(topic: str) -> str:
     _tr = _contains_turkish(topic)
     _cta_pool_en = (
         "Share your view in the comments.",
-        "What do you think? Drop your take below.",
-        "Agree or disagree? Let us know.",
+        "What do you think? Reply in the comments.",
+        "Agree or disagree? Reply in the comments.",
         "How does this resonate with you? Reply below.",
-        "Your turn: what would you add?",
+        "Your turn: what would you add in the comments?",
     )
     _cta_pool_tr = (
         "Yorumlarda fikrini paylas.",
-        "Sen ne dusunuyorsun? Asagiya yaz.",
-        "Katiliyor musun? Gorusunu bekliyoruz.",
-        "Bu sana nasil yansiyor? Cevabini yaz.",
-        "Sirada sen varsin: ne eklerdin?",
+        "Sen ne dusunuyorsun? Yorumlarda yaz.",
+        "Katiliyor musun? Yorumlarda gorusunu yaz.",
+        "Bu sana nasil yansiyor? Yorumlarda cevabini yaz.",
+        "Sirada sen varsin: ne eklerdin? Yorumlarda yaz.",
     )
     return random.choice(_cta_pool_tr if _tr else _cta_pool_en)
+
+
+def _post_cta_has_anchor(text: str) -> bool:
+    low = (text or "").lower()
+    return any(
+        k in low
+        for k in (
+            "comment",
+            "comments",
+            "reply",
+            "share your",
+            "yorum",
+            "yorumlarda",
+            "itiraz",
+            "ornek",
+            "örnek",
+            "counterexample",
+            "counterargument",
+        )
+    )
 
 
 def _build_post_generation_plan(topic: str, parsed_generation_plan: Optional[dict] = None) -> dict:
@@ -1964,6 +1984,12 @@ def _build_post_generation_plan(topic: str, parsed_generation_plan: Optional[dic
             merged_cta = dict(merged.get("cta") or {})
             merged_cta["text"] = _extract_post_cta(topic)
             merged["cta"] = merged_cta
+        merged_cta = dict(merged.get("cta") or {})
+        merged_cta_text = _normalize_whitespace(str(merged_cta.get("text") or ""))
+        if not _post_cta_has_anchor(merged_cta_text):
+            merged_cta_text = _extract_post_cta(topic)
+        merged_cta["text"] = merged_cta_text or _extract_post_cta(topic)
+        merged["cta"] = merged_cta
         return merged
     return base
 
@@ -8506,4 +8532,3 @@ async def memory_summary(
 if __name__ == "__main__":
 
     uvicorn.run(app, host="0.0.0.0", port=8000)
-

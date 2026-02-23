@@ -56,6 +56,13 @@ def _env_int(name: str, default: int) -> int:
         return default
 
 
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw in (None, ""):
+        return default
+    return str(raw).strip().lower() in ("1", "true", "yes", "on")
+
+
 class LLaMAConfig(BaseModel):
     """Model runtime configuration."""
 
@@ -89,6 +96,7 @@ class LLaMAService:
         self.max_retry_attempts = max(1, min(6, _env_int("LLAMA_MAX_RETRY_ATTEMPTS", 4)))
         self.retry_backoff_base_sec = max(0.5, min(5.0, _env_float("LLAMA_RETRY_BACKOFF_BASE_SEC", 1.5)))
         self.rate_limit_cooldown_sec = max(1.0, min(60.0, _env_float("LLAMA_RATE_LIMIT_COOLDOWN_SEC", 3.0)))
+        self.disable_external_calls = _env_bool("LLAMA_DISABLE_EXTERNAL_CALLS", False)
         self._rate_limited_until_ts = 0.0
         self._throttle_lock = asyncio.Lock()
         self._last_call_ts = 0.0
@@ -153,6 +161,11 @@ class LLaMAService:
 
         temp = self.config.temperature if temperature is None else temperature
         token_limit = self.config.max_tokens if max_tokens is None else max_tokens
+
+        # CI/offline mode: skip external provider calls and let chain fallbacks handle response shaping.
+        if self.disable_external_calls or (self.config.provider or "").strip().lower() == "mock":
+            self._append_call_log("request", "skip", "external_calls_disabled")
+            return ""
 
         # Throttle: serialize LLM calls with minimum interval to respect rate limits
         async with self._throttle_lock:

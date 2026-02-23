@@ -40,6 +40,16 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+
+def _is_truthy(v: Optional[str]) -> bool:
+    return str(v or "").strip().lower() in ("1", "true", "yes", "on")
+
+
+# Golden regression should be deterministic by default.
+# Live LLM calls can be enabled explicitly with GOLDEN_ALLOW_LIVE_LLM=1.
+if not _is_truthy(os.getenv("GOLDEN_ALLOW_LIVE_LLM", "")):
+    os.environ["LLAMA_DISABLE_EXTERNAL_CALLS"] = "1"
+
 from main import app  # noqa: E402
 
 
