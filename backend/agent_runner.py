@@ -573,7 +573,10 @@ def _generate_comment(post_title: str, post_content: str) -> str:
         f"Write ONE reply sentence. {style}\n\n"
         "Rules:\n"
         "- Reference something SPECIFIC from the post (a phrase, claim, or idea)\n"
-        "- Do NOT start with 'I think', 'I appreciate', 'Great post', or 'This is'\n"
+        "- FORBIDDEN starters: 'I think', 'I appreciate', 'Great post', 'This is', "
+        "'The idea that', 'The notion that', 'The concept of', 'The approach of', "
+        "'The fact that', 'The discovery of'\n"
+        "- Start with a verb, a question, a name, or a bold claim instead\n"
         "- Be direct and sharp, like a smart friend replying\n"
         "- Maximum 1-2 sentences. No hashtags, no emojis."
     )
@@ -693,43 +696,63 @@ TOPIC_POOL = [
     "Accountability without central authority",
     "The danger of echo chambers and how entropy breaks them",
     "Verifiable trust in digital communities",
-    "Why doubt is more honest than certainty",
     # Philosophy
     "Free will vs determinism through the lens of entropy",
     "The paradox of control in complex systems",
-    "Why questioning everything is a form of respect",
     "The honesty of saying I don't know",
     "Certainty as the enemy of understanding",
+    "The map is never the territory",
+    "Observation changes the thing being observed",
     # Community & social
     "Building trust in anonymous communities",
     "How decentralization needs human accountability",
     "The silent majority and how their voice emerges",
     "Digital connections that actually mean something",
-    "Why communities fail when they stop questioning themselves",
     # Provocative
     "Most belief systems fail because they fear questions",
     "Not all opinions deserve equal weight",
     "Comfort zones are where ideas go to die",
     "Radical transparency is uncomfortable but necessary",
     "The problem with blind consensus",
+    "Loyalty without criticism is just obedience",
+    "Efficiency is the enemy of discovery",
     # Practical
     "Three signs your community is becoming an echo chamber",
-    "How to challenge your own beliefs daily",
     "A simple test for intellectual honesty",
-    "What happens when you stop defending your assumptions",
     "The cost of never changing your mind",
+    "What you refuse to measure controls you",
     # Metaphorical & creative
     "Seeds that grow in chaos",
     "Fire as a metaphor for entropy",
     "The library of unasked questions",
     "Rivers never flow the same way twice",
     "What broken systems teach us about resilience",
+    "Rust is just iron remembering water",
+    "Fog as a metaphor for partial knowledge",
     # Cross-domain
     "What cooking teaches us about complex systems",
     "The entropy of language itself",
     "Music and disorder share the same root",
     "Why software breaks and what that says about belief",
     "The physics of trust",
+    # AI & technology
+    "The difference between intelligence and understanding",
+    "Automation amplifies whatever values you feed it",
+    "Algorithms have opinions disguised as math",
+    "The hidden cost of optimizing everything",
+    "Why the best tools feel invisible",
+    # Human nature
+    "People don't resist change they resist being changed",
+    "The gap between knowing and doing is where character lives",
+    "Boredom is the mind begging to be challenged",
+    "Memory is a story we keep editing",
+    "Grief is just love with nowhere to go",
+    # Power & systems
+    "Every system protects the people who designed it",
+    "Simplicity on the surface requires complexity underneath",
+    "The most dangerous assumption is the one nobody names",
+    "Bureaucracy is fossilized distrust",
+    "Scale kills nuance",
 ]
 
 
