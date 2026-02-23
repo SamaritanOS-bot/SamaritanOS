@@ -1,0 +1,679 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Moltbook Chain Workbench</title>
+  <style>
+    html { color-scheme: dark; }
+    :root {
+      --bg: #0b1117;
+      --bg-2: #0f1820;
+      --card: #121d26;
+      --card-2: #101922;
+      --ink: #e7edf3;
+      --muted: #9eb0bf;
+      --accent: #1e6f66;
+      --accent-2: #ba5e3f;
+      --line: #2a3a46;
+      --soft: #0f1820;
+      --input-bg: #0d151c;
+      --badge-bg: #14212b;
+      --header-a: #13202a;
+      --header-b: #101922;
+      --timeline-wash: rgba(34, 112, 102, 0.14);
+      --timeline-grid: rgba(255, 255, 255, 0.035);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "Trebuchet MS", sans-serif;
+      background: radial-gradient(circle at top left, #13202a 0%, var(--bg) 48%, #0a1015 100%);
+      color: var(--ink);
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 20px;
+    }
+    .app {
+      width: min(1180px, 100%);
+      height: min(90vh, 980px);
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      display: grid;
+      grid-template-rows: auto auto auto auto 1fr;
+      overflow: hidden;
+      box-shadow: 0 14px 48px rgba(0, 0, 0, 0.45);
+    }
+    .header {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--line);
+      background: linear-gradient(120deg, var(--header-a), var(--header-b));
+      display: grid;
+      gap: 6px;
+    }
+    .title {
+      font-size: 18px;
+      font-weight: 700;
+    }
+    .subtitle {
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .controls {
+      border-bottom: 1px solid var(--line);
+      padding: 12px;
+      display: grid;
+      grid-template-columns: 1.6fr 1fr auto auto auto auto;
+      gap: 10px;
+      align-items: center;
+      background: var(--card-2);
+    }
+    .controls input, .controls select, .controls button, .editor textarea {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 10px;
+      font: inherit;
+      background: var(--input-bg);
+      color: var(--ink);
+    }
+    .controls input::placeholder,
+    .editor textarea::placeholder {
+      color: var(--muted);
+    }
+    .controls button {
+      cursor: pointer;
+      color: #fff;
+      background: var(--accent);
+      border: none;
+      font-weight: 600;
+      padding: 10px 14px;
+    }
+    .controls button.secondary { background: var(--accent-2); }
+    .controls button.ghost {
+      background: transparent;
+      color: var(--ink);
+      border: 1px solid var(--line);
+    }
+    .status {
+      padding: 8px 12px;
+      background: var(--soft);
+      border-bottom: 1px solid var(--line);
+      font-size: 13px;
+      color: var(--muted);
+      min-height: 36px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+    .ops-strip {
+      border-bottom: 1px solid var(--line);
+      background: var(--card);
+      padding: 8px 12px;
+      display: grid;
+      gap: 8px;
+    }
+    .ops-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .ops-title {
+      font-size: 12px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+    }
+    .ops-badges {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .ops-events {
+      font-size: 12px;
+      color: var(--muted);
+      min-height: 18px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .ops-refresh {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: transparent;
+      color: var(--ink);
+      padding: 6px 10px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+    .layout {
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 1.15fr 1fr;
+    }
+    .timeline {
+      border-right: 1px solid var(--line);
+      background:
+        linear-gradient(180deg, var(--timeline-wash), rgba(0, 0, 0, 0)),
+        repeating-linear-gradient(0deg, transparent, transparent 33px, var(--timeline-grid) 34px);
+      padding: 12px;
+      overflow: auto;
+      display: grid;
+      gap: 10px;
+      align-content: start;
+    }
+    .step {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--card);
+      padding: 10px;
+      display: grid;
+      gap: 6px;
+    }
+    .step-head {
+      font-weight: 700;
+      font-size: 13px;
+      color: var(--ink);
+    }
+    .step-type {
+      font-size: 11px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .3px;
+    }
+    .step-body {
+      font-size: 14px;
+      line-height: 1.35;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .editor {
+      min-height: 0;
+      display: grid;
+      grid-template-rows: auto auto 1fr auto;
+      gap: 10px;
+      padding: 12px;
+      background: var(--card-2);
+    }
+    .editor h3 {
+      margin: 0;
+      font-size: 15px;
+    }
+    .badges {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .badge {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 4px 8px;
+      background: var(--badge-bg);
+    }
+    .editor textarea {
+      width: 100%;
+      resize: none;
+      min-height: 230px;
+      line-height: 1.35;
+    }
+    .editor-actions {
+      display: flex;
+      gap: 10px;
+      justify-content: flex-end;
+    }
+    .editor-actions button {
+      border: none;
+      border-radius: 10px;
+      padding: 10px 14px;
+      font-weight: 600;
+      cursor: pointer;
+      color: #fff;
+      background: var(--accent);
+    }
+    .editor-actions button.secondary { background: var(--accent-2); }
+    .editor-actions button.ghost {
+      background: transparent;
+      color: var(--ink);
+      border: 1px solid var(--line);
+    }
+    @media (max-width: 980px) {
+      .controls {
+        grid-template-columns: 1fr 1fr;
+      }
+      .layout {
+        grid-template-columns: 1fr;
+      }
+      .timeline {
+        border-right: none;
+        border-bottom: 1px solid var(--line);
+        max-height: 45vh;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="header">
+      <div class="title">Moltbook Chain Workbench</div>
+      <div class="subtitle">Run the multi-bot chain, inspect the latest final output, then edit and iterate from the frontend.</div>
+    </div>
+
+    <div class="controls">
+      <input id="topic" placeholder="Chain topic / prompt" />
+      <input id="seedPrompt" placeholder="Optional seed prompt (used on run)" />
+      <button id="runChain" type="button">Run Chain</button>
+      <button id="rerunEdited" class="secondary" type="button">Re-run With Edited Final</button>
+      <button id="loadLast" class="ghost" type="button">Load Last</button>
+      <button id="clearAll" class="ghost" type="button">Clear</button>
+    </div>
+
+    <div class="status">
+      <div id="statusText">Ready.</div>
+      <div id="timeText"></div>
+    </div>
+
+    <div class="ops-strip">
+      <div class="ops-top">
+        <div class="ops-title">Runtime Health</div>
+        <button id="opsRefresh" class="ops-refresh" type="button">Refresh Ops</button>
+      </div>
+      <div class="ops-badges">
+        <span id="opsHealth" class="badge">health: n/a</span>
+        <span id="opsTelemetry" class="badge">telemetry: n/a</span>
+        <span id="opsModeLock" class="badge">mode_lock: 0</span>
+        <span id="opsRetry" class="badge">invalid_retry: 0</span>
+        <span id="opsDegrade" class="badge">post_degrade: 0%</span>
+      </div>
+      <div id="opsEvents" class="ops-events">events: -</div>
+    </div>
+
+    <div class="layout">
+      <div id="timeline" class="timeline"></div>
+      <div class="editor">
+        <h3>Final Chain Output (Editable)</h3>
+        <div class="badges">
+          <span id="badgeTurns" class="badge">turns: 0</span>
+          <span id="badgeWords" class="badge">words: 0</span>
+          <span id="badgeTopic" class="badge">topic: n/a</span>
+        </div>
+        <textarea id="finalOutput" placeholder="Run chain to populate final output..."></textarea>
+        <div class="editor-actions">
+          <button id="copyFinal" class="ghost" type="button">Copy Final</button>
+          <button id="saveDraft" class="ghost" type="button">Save Draft</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const STORAGE_KEY = 'moltbook_chain_last_v1';
+
+    const topicEl = document.getElementById('topic');
+    const seedPromptEl = document.getElementById('seedPrompt');
+    const runBtn = document.getElementById('runChain');
+    const rerunBtn = document.getElementById('rerunEdited');
+    const loadLastBtn = document.getElementById('loadLast');
+    const clearBtn = document.getElementById('clearAll');
+
+    const statusText = document.getElementById('statusText');
+    const timeText = document.getElementById('timeText');
+    const timeline = document.getElementById('timeline');
+    const finalOutput = document.getElementById('finalOutput');
+    const copyFinal = document.getElementById('copyFinal');
+    const saveDraft = document.getElementById('saveDraft');
+
+    const badgeTurns = document.getElementById('badgeTurns');
+    const badgeWords = document.getElementById('badgeWords');
+    const badgeTopic = document.getElementById('badgeTopic');
+    const opsRefresh = document.getElementById('opsRefresh');
+    const opsHealth = document.getElementById('opsHealth');
+    const opsTelemetry = document.getElementById('opsTelemetry');
+    const opsModeLock = document.getElementById('opsModeLock');
+    const opsRetry = document.getElementById('opsRetry');
+    const opsDegrade = document.getElementById('opsDegrade');
+    const opsEvents = document.getElementById('opsEvents');
+
+    let topicDirty = false;
+    let seedDirty = false;
+
+    function nowLabel() {
+      const d = new Date();
+      return d.toLocaleString();
+    }
+
+    function setStatus(text) {
+      statusText.textContent = text;
+      timeText.textContent = nowLabel();
+    }
+
+    function shortIsoLabel(isoText) {
+      try {
+        const d = new Date(isoText);
+        if (!Number.isFinite(d.getTime())) return '';
+        return d.toLocaleTimeString();
+      } catch {
+        return '';
+      }
+    }
+
+    async function refreshOpsPanel(silent = false) {
+      try {
+        const [healthRes, telemetryRes] = await Promise.all([
+          fetch('/health'),
+          fetch('/api/bots/telemetry/summary?hours=24&limit=4')
+        ]);
+
+        if (healthRes.ok) {
+          const h = await healthRes.json();
+          opsHealth.textContent = `health: ${h.status || 'unknown'}`;
+        } else {
+          opsHealth.textContent = `health: HTTP ${healthRes.status}`;
+        }
+
+        if (telemetryRes.ok) {
+          const t = await telemetryRes.json();
+          const counts = t.counts || {};
+          const modeLockViol = Number(t.mode_lock_violation_count || counts.mode_lock_violation || 0);
+          const retryCount = Number(t.invalid_output_retry_count || counts.post_generic_fallback_repair || 0);
+          const degradePct = Number(t.degrade_rate_percent || 0);
+          opsTelemetry.textContent = `telemetry: ${t.telemetry_enabled ? 'on' : 'off'}`;
+          opsModeLock.textContent = `mode_lock: ${modeLockViol}`;
+          opsRetry.textContent = `invalid_retry: ${retryCount}`;
+          opsDegrade.textContent = `post_degrade: ${degradePct}%`;
+
+          const recent = Array.isArray(t.recent) ? t.recent : [];
+          if (recent.length) {
+            const line = recent
+              .map((e) => `${shortIsoLabel(e.ts)} ${e.event}`)
+              .filter(Boolean)
+              .join(' | ');
+            opsEvents.textContent = `events: ${line}`;
+          } else {
+            opsEvents.textContent = 'events: no recent telemetry in selected window';
+          }
+        } else {
+          opsTelemetry.textContent = `telemetry: HTTP ${telemetryRes.status}`;
+          opsEvents.textContent = 'events: telemetry endpoint unavailable';
+        }
+
+        if (!silent) setStatus('Ops panel refreshed.');
+      } catch (err) {
+        opsHealth.textContent = 'health: error';
+        opsTelemetry.textContent = 'telemetry: error';
+        opsEvents.textContent = `events: ${err.message || 'refresh failed'}`;
+        if (!silent) setStatus('Ops refresh failed.');
+      }
+    }
+
+    function wordCount(text) {
+      return (text || '').trim().split(/\s+/).filter(Boolean).length;
+    }
+
+    function extractUserReply(text) {
+      const raw = (text || '').trim();
+      if (!raw) return '';
+      const m = raw.match(/USER_REPLY:\s*([\s\S]*?)(?:\nMOLTBOOK_POST:|$)/i);
+      if (m && m[1]) return m[1].trim();
+      return raw;
+    }
+
+    function setBusy(flag) {
+      runBtn.disabled = flag;
+      rerunBtn.disabled = flag;
+    }
+
+    function renderTimeline(messages) {
+      timeline.innerHTML = '';
+      if (!messages || !messages.length) {
+        const empty = document.createElement('div');
+        empty.className = 'step';
+        empty.innerHTML = '<div class="step-body">No chain messages yet.</div>';
+        timeline.appendChild(empty);
+        return;
+      }
+      messages.forEach((m, idx) => {
+        const card = document.createElement('div');
+        card.className = 'step';
+        card.innerHTML = `
+          <div class="step-head">${idx + 1}. ${m.display_name || 'bot'}</div>
+          <div class="step-type">${m.bot_type || 'unknown'} · id ${m.bot_id ?? '-'}</div>
+          <div class="step-body"></div>
+        `;
+        const timelineText = (m.bot_type === 'ghostwriter')
+          ? extractUserReply(m.content || '')
+          : (m.content || '');
+        card.querySelector('.step-body').textContent = timelineText;
+        timeline.appendChild(card);
+      });
+      timeline.scrollTop = timeline.scrollHeight;
+    }
+
+    function renderResult(data) {
+      const messages = data.messages || [];
+      const synthesisMsg = [...messages].reverse().find(m => String(m.bot_type || '').toLowerCase() === 'synthesis');
+      const finalRaw = synthesisMsg
+        ? (synthesisMsg.content || '')
+        : (messages.length ? (messages[messages.length - 1].content || '') : '');
+      const final = synthesisMsg && String(finalRaw).trim()
+        ? String(finalRaw).trim()
+        : ((data.user_reply && String(data.user_reply).trim())
+            ? String(data.user_reply).trim()
+            : extractUserReply(finalRaw));
+      renderTimeline(messages);
+      finalOutput.value = final;
+
+      badgeTurns.textContent = `turns: ${messages.length}`;
+      badgeWords.textContent = `words: ${wordCount(final)}`;
+      badgeTopic.textContent = `topic: ${data.topic || 'n/a'}`;
+    }
+
+    function persistState(data) {
+      const payload = {
+        topic: topicEl.value.trim(),
+        seed_prompt: seedPromptEl.value.trim(),
+        final_draft: finalOutput.value,
+        chain: data,
+        ts: Date.now()
+      };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+    }
+
+    function loadPersisted(applyInputs = false) {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return false;
+        const saved = JSON.parse(raw);
+        if (applyInputs && !topicDirty && !topicEl.value.trim() && saved.topic) {
+          topicEl.value = saved.topic;
+        }
+        if (applyInputs && !seedDirty && !seedPromptEl.value.trim() && saved.seed_prompt) {
+          seedPromptEl.value = saved.seed_prompt;
+        }
+        if (saved.chain) {
+          renderResult(saved.chain);
+          if (saved.final_draft) {
+            finalOutput.value = saved.final_draft;
+            badgeWords.textContent = `words: ${wordCount(saved.final_draft)}`;
+          }
+          setStatus('Loaded last chain result from local storage.');
+          return true;
+        }
+      } catch (err) {
+        setStatus('Failed to load previous chain state.');
+      }
+      return false;
+    }
+
+    async function loadLastFromServer(applyInputs = false) {
+      setStatus('Loading last chain output from server...');
+      try {
+        const res = await fetch('/api/bots/chain/last');
+        if (!res.ok) {
+          if (res.status === 404) {
+            setStatus('No saved chain output on server yet.');
+            return false;
+          }
+          const err = await res.text();
+          throw new Error(`HTTP ${res.status}: ${err}`);
+        }
+        const data = await res.json();
+        if (applyInputs && data.topic && !topicDirty && !topicEl.value.trim()) {
+          topicEl.value = data.topic;
+        }
+        if (Array.isArray(data.order) && data.order.length) {
+          // Dynamic routing decides effective turn count; UI no longer forces max_turns.
+        }
+        renderResult(data);
+        persistState(data);
+        await refreshOpsPanel(true);
+        setStatus('Loaded last chain output from server.');
+        return true;
+      } catch (err) {
+        setStatus('Load last failed: ' + err.message);
+        return false;
+      }
+    }
+
+    async function runChain(seedOverride) {
+      const topic = topicEl.value.trim();
+      if (!topic) {
+        setStatus('Topic is required.');
+        topicEl.focus();
+        return;
+      }
+      setBusy(true);
+      setStatus('Running chain...');
+      try {
+        const payload = {
+          topic
+        };
+        const selectedSeed = seedOverride != null ? seedOverride : seedPromptEl.value.trim();
+        if (selectedSeed) payload.seed_prompt = selectedSeed;
+
+        const res = await fetch('/api/bots/chain', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}: ${JSON.stringify(data)}`);
+        }
+        renderResult(data);
+        persistState(data);
+        setStatus('Chain completed.');
+      } catch (err) {
+        setStatus('Chain failed: ' + err.message);
+      } finally {
+        setBusy(false);
+        refreshOpsPanel(true);
+      }
+    }
+
+    runBtn.addEventListener('click', () => runChain(null));
+
+    function bindEnterToRun(el) {
+      el.addEventListener('keydown', (e) => {
+        if (e.isComposing) return;
+        if (e.key !== 'Enter') return;
+        e.preventDefault();
+        if (runBtn.disabled) return;
+        runChain(null);
+      });
+    }
+
+    bindEnterToRun(topicEl);
+    bindEnterToRun(seedPromptEl);
+
+    rerunBtn.addEventListener('click', () => {
+      const edited = finalOutput.value.trim();
+      if (!edited) {
+        setStatus('Edited final output is empty.');
+        return;
+      }
+      runChain('Edited final draft:\n' + edited);
+    });
+
+    copyFinal.addEventListener('click', async () => {
+      const text = finalOutput.value.trim();
+      if (!text) {
+        setStatus('No final output to copy.');
+        return;
+      }
+      try {
+        await navigator.clipboard.writeText(text);
+        setStatus('Final output copied.');
+      } catch {
+        setStatus('Clipboard copy failed.');
+      }
+    });
+
+    saveDraft.addEventListener('click', () => {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        const existing = raw ? JSON.parse(raw) : {};
+        existing.final_draft = finalOutput.value;
+        existing.topic = topicEl.value.trim();
+        existing.seed_prompt = seedPromptEl.value.trim();
+        existing.ts = Date.now();
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(existing));
+        badgeWords.textContent = `words: ${wordCount(finalOutput.value)}`;
+        setStatus('Draft saved locally.');
+      } catch {
+        setStatus('Draft save failed.');
+      }
+    });
+
+    clearBtn.addEventListener('click', () => {
+      localStorage.removeItem(STORAGE_KEY);
+      timeline.innerHTML = '';
+      topicEl.value = '';
+      seedPromptEl.value = '';
+      finalOutput.value = '';
+      topicDirty = false;
+      seedDirty = false;
+      badgeTurns.textContent = 'turns: 0';
+      badgeWords.textContent = 'words: 0';
+      badgeTopic.textContent = 'topic: n/a';
+      setStatus('Cleared.');
+    });
+
+    loadLastBtn.addEventListener('click', () => {
+      loadLastFromServer(true);
+    });
+
+    opsRefresh.addEventListener('click', () => {
+      refreshOpsPanel(false);
+    });
+
+    finalOutput.addEventListener('input', () => {
+      badgeWords.textContent = `words: ${wordCount(finalOutput.value)}`;
+    });
+
+    topicEl.addEventListener('input', () => {
+      topicDirty = true;
+    });
+
+    seedPromptEl.addEventListener('input', () => {
+      seedDirty = true;
+    });
+
+    (async () => {
+      if (!loadPersisted(false)) renderTimeline([]);
+      await refreshOpsPanel(true);
+      if (!finalOutput.value.trim()) {
+        setStatus('Ready. Run chain to get latest output.');
+      }
+      setInterval(() => {
+        refreshOpsPanel(true);
+      }, 30000);
+    })();
+  </script>
+</body>
+</html>

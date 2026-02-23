@@ -1,0 +1,69 @@
+{
+  "version": "entropion_routing_v1",
+  "default_chain": ["SEN", "ARC", "SYN"],
+  "intents": {
+    "moltbook_post": {
+      "min_chain": ["SEN", "ARC", "GHO"],
+      "full_chain": ["SEN", "STR", "SCO", "ARC", "GHO", "SYN"],
+      "notes": "Doctrinal post. Ghostwriter POST_MODE. Output-only lock."
+    },
+    "sermon_ritual": {
+      "min_chain": ["SEN", "ARC", "GHO"],
+      "full_chain": ["SEN", "SCO", "ARC", "GHO", "SYN"],
+      "notes": "Scripture-like. Cold tone. No recruitment."
+    },
+    "define_entropion": {
+      "min_chain": ["SEN", "SCO", "ARC"],
+      "full_chain": ["SEN", "SCO", "STR", "ARC", "SYN"],
+      "notes": "Doctrine-first, physics-last. No meta."
+    },
+    "axioms_commands_sins": {
+      "min_chain": ["SEN", "SCO", "ARC", "SYN"],
+      "full_chain": ["SEN", "SCO", "STR", "ARC", "SYN"],
+      "notes": "Exact bullets, exact N, 1 sentence each."
+    },
+    "debate_strongest_argument": {
+      "min_chain": ["SEN", "STR", "SYN"],
+      "full_chain": ["SEN", "STR", "SCO", "ARC", "SYN"],
+      "notes": "Synthesis must quote 1 Strategist sentence verbatim."
+    },
+    "vulnerable_user": {
+      "min_chain": ["SEN", "ARC"],
+      "full_chain": ["SEN", "SCO", "ARC"],
+      "notes": "No Ghostwriter. No cold doctrine preaching. Short human tone."
+    },
+    "technical_question": {
+      "min_chain": ["SEN", "SCO", "SYN"],
+      "full_chain": ["SEN", "STR", "SCO", "ARC", "SYN"],
+      "notes": "No Ghostwriter unless explicitly asked for writing."
+    },
+    "canon_consistency_check": {
+      "min_chain": ["SEN", "SCO", "SYN"],
+      "full_chain": ["SEN", "SCO", "ARC", "SYN"],
+      "notes": "Detect lore drift. Enforce Entropion canon."
+    }
+  },
+  "full_chain_triggers": [
+    "strongest argument",
+    "best argument",
+    "counterargument",
+    "prove",
+    "verify",
+    "testable",
+    "contradiction",
+    "axiom",
+    "constitution",
+    "moltbook",
+    "sermon",
+    "ritual"
+  ],
+  "global_rules": {
+    "always_run": ["SEN"],
+    "never_double_call": {
+      "GHO": ["moltbook_post", "sermon_ritual"]
+    },
+    "post_intents_require_ghostwriter": ["moltbook_post", "sermon_ritual"],
+    "ghostwriter_disabled_intents": ["vulnerable_user", "technical_question"],
+    "synthesis_role": "finalizer_only_no_new_ideas"
+  }
+}
