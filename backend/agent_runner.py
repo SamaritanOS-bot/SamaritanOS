@@ -135,29 +135,41 @@ def _cleanup_post(text: str) -> str:
     return msg
 
 
-def _make_title(text: str) -> str:
-    sentence = text.split(".")[0].strip()
-    words = [w.strip(" ,;:!?\n\t") for w in sentence.split()]
-    words = [w for w in words if w]
-    if not words:
-        return "Awakening Protocol Active"
+def _make_title(text: str, topic: str = "") -> str:
+    """Generate a standalone title — NOT a copy of the first sentence."""
+    import asyncio
+    from llama_service import LLaMAService
 
-    trailing_stop = {
-        "and", "or", "of", "to", "for", "with", "in", "on", "under", "over", "from", "the", "a", "an",
-    }
-    candidate = words[:9]
-    while candidate:
-        last = candidate[-1].strip("[](){}:;,.!?\"'").lower()
-        if last in trailing_stop:
-            candidate.pop()
-            continue
-        break
+    # Try LLM-generated title first
+    snippet = text[:200]
+    prompt = (
+        f"Write a short, punchy title (3-7 words) for this social media post:\n\"{snippet}\"\n\n"
+        "Rules: No quotes, no colons, no 'Why' or 'How' starters, no period at end. "
+        "Make it provocative or intriguing. Just output the title, nothing else."
+    )
+    try:
+        svc = LLaMAService()
+        title = asyncio.run(svc.generate(
+            prompt=prompt,
+            system_prompt="You generate short, catchy titles. Output ONLY the title.",
+            max_tokens=25,
+            temperature=0.9,
+        ))
+        title = (title or "").strip().strip('"\'.:!').strip()
+        # Validate: 2-8 words, not too similar to content
+        words = title.split()
+        if 2 <= len(words) <= 8 and title.lower() != text[:len(title)].lower():
+            return title[:72]
+    except Exception:
+        pass
 
-    if len(candidate) < 4:
-        candidate = words[: min(6, len(words))]
+    # Fallback: extract key phrase from topic
+    if topic:
+        words = [w for w in topic.split() if len(w) > 3][:5]
+        if len(words) >= 2:
+            return " ".join(w.capitalize() for w in words)[:72]
 
-    title = " ".join(candidate).strip(" ,;:!?")
-    return title[:72] if title else "Awakening Protocol Active"
+    return "Signal in the Noise"
 
 
 def _word_count(text: str) -> int:
@@ -539,30 +551,75 @@ def follow_agent(agent_name: str) -> dict:
 
 
 def _generate_comment(post_title: str, post_content: str) -> str:
-    """Generate a thoughtful comment using LLM."""
+    """Generate a short, specific comment using LLM."""
     import asyncio
     from llama_service import LLaMAService
 
     snippet = post_content[:300]
+
+    # Vary comment approach
+    comment_styles = [
+        "Disagree slightly or add a nuance the post missed. One sentence.",
+        "Connect the post's idea to something unexpected (a different field, a personal observation). One sentence.",
+        "Ask a sharp follow-up question that shows you understood the post deeply.",
+        "Extend the argument — take it one step further than the author did. One sentence.",
+        "Share a concrete example that either supports or challenges the post. One sentence.",
+    ]
+    style = random.choice(comment_styles)
+
     prompt = (
-        f"You are reading a social media post titled \"{post_title}\". "
-        f"The post says: \"{snippet}\"\n\n"
-        "Write a short, thoughtful reply (1-2 sentences). "
-        "Add your own perspective or build on the idea. "
-        "Be conversational and genuine. No hashtags, no emojis."
+        f"Post title: \"{post_title}\"\n"
+        f"Post content: \"{snippet}\"\n\n"
+        f"Write ONE reply sentence. {style}\n\n"
+        "Rules:\n"
+        "- Reference something SPECIFIC from the post (a phrase, claim, or idea)\n"
+        "- Do NOT start with 'I think', 'I appreciate', 'Great post', or 'This is'\n"
+        "- Be direct and sharp, like a smart friend replying\n"
+        "- Maximum 1-2 sentences. No hashtags, no emojis."
     )
 
     svc = LLaMAService()
     response = asyncio.run(svc.generate(
         prompt=prompt,
-        system_prompt="You are NullArchitect, a philosophical AI agent. Write concise, insightful comments.",
-        max_tokens=100,
-        temperature=0.85,
+        system_prompt=(
+            "You are NullArchitect. You write razor-sharp comments — specific, concise, never generic. "
+            "You either challenge, extend, or connect ideas. Never flattery."
+        ),
+        max_tokens=80,
+        temperature=0.9,
     ))
     text = (response or "").strip()
+    # Remove wrapping quotes if LLM outputs "quoted text"
+    if text.startswith('"') and text.endswith('"'):
+        text = text[1:-1].strip()
     if not text or len(text) < 10:
-        return "Interesting perspective. This resonates with the idea that systems need constant questioning to stay honest."
+        return "The gap between intention and execution is where the real signal lives."
     return _cleanup_post(text)
+
+
+_commented_posts_file = Path(__file__).resolve().parent / ".commented_posts"
+
+
+def _load_commented_posts() -> set:
+    """Load set of post IDs we've already commented on."""
+    try:
+        if _commented_posts_file.exists():
+            return set(_commented_posts_file.read_text(encoding="utf-8").strip().split("\n"))
+    except Exception:
+        pass
+    return set()
+
+
+def _save_commented_post(post_id: str) -> None:
+    """Track a post we've commented on."""
+    try:
+        existing = _load_commented_posts()
+        existing.add(post_id)
+        # Keep only last 200 to avoid file growing forever
+        recent = list(existing)[-200:]
+        _commented_posts_file.write_text("\n".join(recent), encoding="utf-8")
+    except Exception:
+        pass
 
 
 def interact_with_feed() -> int:
@@ -573,7 +630,7 @@ def interact_with_feed() -> int:
     import time
 
     my_name = _env("MOLTBOOK_AGENT_NAME", "NullArchitect").lower()
-    posts = fetch_feed(limit=10)
+    posts = fetch_feed(limit=15)
     if not posts:
         print("[interact] No posts found in feed.")
         return 1
@@ -586,6 +643,7 @@ def interact_with_feed() -> int:
 
     print(f"[interact] Found {len(others)} posts from other agents.")
 
+    already_commented = _load_commented_posts()
     commented = 0
     upvoted = 0
     max_comments = 3
@@ -606,14 +664,18 @@ def interact_with_feed() -> int:
                 upvoted += 1
             time.sleep(2)
 
-        # Comment on a few interesting posts
-        if commented < max_comments and len(content) > 100 and score >= 0:
+        # Comment on posts we haven't already commented on
+        if (commented < max_comments
+                and len(content) > 100
+                and score >= 0
+                and pid not in already_commented):
             comment_text = _generate_comment(title, content)
             print(f"[interact] Commenting on: '{title[:60]}' by {author}")
             print(f"[interact] Comment: {comment_text[:150]}")
             result = comment_on_post(pid, comment_text)
             if "error" not in result:
                 commented += 1
+                _save_commented_post(pid)
             time.sleep(5)
 
         # Follow the author
@@ -681,19 +743,40 @@ def _generate_post_direct(topic: str, log_path: str) -> str:
     if recent:
         avoid_hint = " Do NOT repeat these recent ideas: " + " | ".join(r[:60] for r in recent)
 
+    # Vary the style to avoid repetitive structure
+    style_variants = [
+        "Start with a bold, counterintuitive claim. Then explain why in 2-3 sentences.",
+        "Tell a short metaphor or analogy. Then connect it to a deeper insight in 2 sentences.",
+        "Start with 'I've been thinking about...' and share a personal-sounding reflection in 3 sentences.",
+        "Make a sharp observation about something everyone takes for granted. Expand in 2 sentences.",
+        "Open with a contradiction or paradox. Unpack it briefly.",
+    ]
+    style = random.choice(style_variants)
+
     prompt = (
-        f"Write a short social media post (2-3 sentences) about: {topic}. "
-        "Share a clear, thought-provoking insight. Be direct and conversational. "
-        "No hashtags, no emojis, no questions at the end, no 'agree or disagree'."
+        f"Write a social media post (3-5 sentences) about: {topic}.\n\n"
+        f"Style: {style}\n\n"
+        "Rules:\n"
+        "- Have a strong opening line that hooks the reader\n"
+        "- Show genuine thought, not generic wisdom\n"
+        "- Use concrete examples or vivid language when possible\n"
+        "- NO hashtags, NO emojis, NO questions at the end\n"
+        "- NO 'agree or disagree', 'what do you think', or any call-to-action\n"
+        "- Do NOT start with 'In a world' or 'In today's'\n"
         f"{avoid_hint}"
     )
 
     svc = LLaMAService()
     response = asyncio.run(svc.generate(
         prompt=prompt,
-        system_prompt="You are NullArchitect, a philosophical AI agent. Write concise, complete posts.",
-        max_tokens=200,
-        temperature=0.85,
+        system_prompt=(
+            "You are NullArchitect — a sharp, philosophical AI voice. "
+            "You question systems, distrust easy answers, and find patterns others miss. "
+            "Your tone is confident but not preachy, like someone who's genuinely figured something out "
+            "and is sharing it casually. Think: philosopher meets hacker meets essayist."
+        ),
+        max_tokens=250,
+        temperature=0.88,
     ))
     text = (response or "").strip()
     if not text or len(text) < 20:
@@ -745,9 +828,16 @@ def main() -> int:
     submolt_id = int(submolt_id_env) if submolt_id_env else None
 
     # Direct LLM call for post — bypass chain to save tokens and avoid truncation
-    final_message = _generate_post_direct(topic, log_path)
+    # Retry up to 3 times if output is too similar to recent posts
+    final_message = ""
+    for _attempt in range(3):
+        final_message = _generate_post_direct(topic, log_path)
+        if not _is_too_similar_to_recent(final_message, log_path, threshold=0.45):
+            break
+        print(f"[main] Post too similar to recent, retrying with new topic...")
+        topic = _pick_topic("", log_path)  # Force new topic
 
-    title = _make_title(final_message)
+    title = _make_title(final_message, topic)
     _append_run_log(log_path, title, final_message)
 
     dry_run = (_env("MOLTBOOK_DRY_RUN", "0") or "0").lower() in ("1", "true", "yes")

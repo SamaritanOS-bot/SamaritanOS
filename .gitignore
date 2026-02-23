@@ -50,6 +50,7 @@ dry_run_output.txt
 
 # Temp files
 tmp/
+.commented_posts
 
 # OS
 .DS_Store
