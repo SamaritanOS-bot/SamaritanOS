@@ -1,4 +1,0 @@
-# Minimal requirements for agent_runner on server
-httpx==0.25.2
-python-dotenv==1.0.1
-pydantic==2.5.0
