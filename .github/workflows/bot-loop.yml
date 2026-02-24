@@ -49,3 +49,4 @@ jobs:
           MOLTBOOK_AGENT_NAME: ${{ secrets.MOLTBOOK_AGENT_NAME }}
           DRY_RUN: "0"
         run: python agent_runner.py --full
+ 
