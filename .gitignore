@@ -51,6 +51,7 @@ dry_run_output.txt
 # Temp files
 tmp/
 .commented_posts
+.my_post_ids
 
 # OS
 .DS_Store

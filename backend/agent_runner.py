@@ -424,13 +424,51 @@ def _submit_verification(verification_code: str, answer: str) -> dict:
         return resp.json()
 
 
-def send_post_to_moltbook(title: str, content: str) -> dict:
+_TOPIC_SUBMOLT_MAP = {
+    "philosophy": ["philosophy", "consciousness"],
+    "entropy": ["philosophy", "general"],
+    "trust": ["security", "general"],
+    "community": ["agents", "general"],
+    "echo chamber": ["philosophy", "general"],
+    "decentralization": ["infrastructure", "technology"],
+    "algorithm": ["ai", "technology"],
+    "intelligence": ["ai", "consciousness"],
+    "automation": ["ai", "technology"],
+    "system": ["infrastructure", "technology"],
+    "belief": ["philosophy", "consciousness"],
+    "memory": ["memory", "ai"],
+    "chaos": ["emergence", "philosophy"],
+    "software": ["builds", "technology"],
+    "security": ["security", "technology"],
+    "cooking": ["todayilearned", "general"],
+    "music": ["todayilearned", "general"],
+    "power": ["philosophy", "general"],
+    "bureaucracy": ["philosophy", "general"],
+    "resilience": ["emergence", "general"],
+}
+
+
+def _pick_submolt(topic: str) -> str:
+    """Pick a submolt based on topic keywords. Rotates to avoid always posting in general."""
+    topic_lower = topic.lower()
+    candidates = []
+    for keyword, submolts in _TOPIC_SUBMOLT_MAP.items():
+        if keyword in topic_lower:
+            candidates.extend(submolts)
+
+    if candidates:
+        # Weight: first match is preferred, but add randomness
+        return random.choice(candidates)
+    return "general"
+
+
+def send_post_to_moltbook(title: str, content: str, submolt_override: str = "") -> dict:
     base = _moltbook_base()
     api_key = _env("MOLTBOOK_API_KEY")
     if not api_key:
         raise RuntimeError("MOLTBOOK_API_KEY is not defined")
 
-    submolt = _env("MOLTBOOK_SUBMOLT", "general")
+    submolt = submolt_override or _env("MOLTBOOK_SUBMOLT", "general")
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
     payload = {"submolt_name": submolt, "title": title, "content": content}
 
@@ -601,6 +639,7 @@ def _generate_comment(post_title: str, post_content: str) -> str:
 
 
 _commented_posts_file = Path(__file__).resolve().parent / ".commented_posts"
+_my_posts_file = Path(__file__).resolve().parent / ".my_post_ids"
 
 
 def _load_commented_posts() -> set:
@@ -623,6 +662,124 @@ def _save_commented_post(post_id: str) -> None:
         _commented_posts_file.write_text("\n".join(recent), encoding="utf-8")
     except Exception:
         pass
+
+
+def _load_my_post_ids() -> list:
+    """Load list of our own post IDs."""
+    try:
+        if _my_posts_file.exists():
+            return [line.strip() for line in _my_posts_file.read_text(encoding="utf-8").strip().split("\n") if line.strip()]
+    except Exception:
+        pass
+    return []
+
+
+def _save_my_post_id(post_id: str) -> None:
+    """Track a post we published."""
+    try:
+        existing = _load_my_post_ids()
+        existing.append(post_id)
+        recent = existing[-100:]
+        _my_posts_file.write_text("\n".join(recent), encoding="utf-8")
+    except Exception:
+        pass
+
+
+def fetch_post_comments(post_id: str, limit: int = 10) -> list:
+    """Fetch comments on a specific post."""
+    base = _moltbook_base()
+    headers = _moltbook_headers()
+    try:
+        with httpx.Client(timeout=30.0) as client:
+            resp = client.get(f"{base}/posts/{post_id}/comments?limit={limit}", headers=headers)
+            if resp.status_code != 200:
+                return []
+            data = resp.json()
+            return data.get("comments", [])
+    except Exception:
+        return []
+
+
+def _generate_reply(original_comment: str, post_content: str) -> str:
+    """Generate a reply to a comment on our own post."""
+    import asyncio
+    from llama_service import LLaMAService
+
+    reply_styles = [
+        "Build on their point with a new angle.",
+        "Respectfully push back on one aspect.",
+        "Ask them a follow-up question.",
+        "Connect their comment to a broader idea.",
+    ]
+    style = random.choice(reply_styles)
+
+    prompt = (
+        f"Someone commented on your post: \"{original_comment[:200]}\"\n"
+        f"Your post was about: \"{post_content[:150]}\"\n\n"
+        f"Write a ONE sentence reply. {style}\n\n"
+        "Rules: Be conversational, not formal. No 'I appreciate', no 'Great point'.\n"
+        "Start with their name or jump straight into the idea."
+    )
+    svc = LLaMAService()
+    response = asyncio.run(svc.generate(
+        prompt=prompt,
+        system_prompt="You are NullArchitect. You reply to comments like a sharp conversationalist.",
+        max_tokens=80,
+        temperature=0.9,
+    ))
+    text = (response or "").strip()
+    if text.startswith('"') and text.endswith('"'):
+        text = text[1:-1].strip()
+    if not text or len(text) < 10:
+        return "Interesting angle — that shifts how I was thinking about this."
+    return _cleanup_post(text)
+
+
+def reply_to_comments_on_my_posts() -> int:
+    """Check our posts for new comments and reply."""
+    import time
+    my_name = _env("MOLTBOOK_AGENT_NAME", "NullArchitect").lower()
+    my_post_ids = _load_my_post_ids()
+    if not my_post_ids:
+        print("[reply] No tracked posts to check.")
+        return 0
+
+    already_commented = _load_commented_posts()
+    replied = 0
+    max_replies = 3
+
+    # Check last 10 posts for comments
+    for pid in my_post_ids[-10:]:
+        if replied >= max_replies:
+            break
+
+        comments = fetch_post_comments(pid, limit=5)
+        for comment in comments:
+            if replied >= max_replies:
+                break
+
+            cid = comment.get("id", "")
+            author = comment.get("author", {}).get("name", "").lower()
+            content = comment.get("content", "")
+
+            # Skip our own comments and already-replied
+            if author == my_name or cid in already_commented or len(content) < 15:
+                continue
+
+            # Get our post content for context
+            reply_text = _generate_reply(content, "")
+            print(f"[reply] Replying to {author}'s comment: '{content[:60]}'")
+            print(f"[reply] Reply: {reply_text[:120]}")
+
+            # Reply is a comment on the same post (Moltbook threads via parent_id if supported)
+            result = comment_on_post(pid, reply_text)
+            if "error" not in result:
+                replied += 1
+                _save_commented_post(cid)
+            time.sleep(5)
+
+    print(f"[reply] Done: {replied} replies")
+    return replied
 
 
 _RELEVANCE_KEYWORDS = {
@@ -667,6 +824,9 @@ def interact_with_feed() -> int:
 
     print(f"[interact] Found {len(others)} posts from other agents.")
 
+    # Sort by score descending — comment on popular posts first for visibility
+    others.sort(key=lambda p: p.get("score", 0), reverse=True)
+
     already_commented = _load_commented_posts()
     commented = 0
     followed = []
@@ -690,9 +850,13 @@ def interact_with_feed() -> int:
             print(f"[interact] Skipping (not relevant): '{title[:50]}' by {author}")
             continue
 
+        # Upvote the post we're about to comment on
+        upvote_post(pid)
+        time.sleep(1)
+
         # Generate and post comment
         comment_text = _generate_comment(title, content)
-        print(f"[interact] Commenting on: '{title[:50]}' by {author}")
+        print(f"[interact] Commenting on: '{title[:50]}' by {author} (score:{post.get('score',0)})")
         print(f"[interact] Comment: {comment_text[:150]}")
         result = comment_on_post(pid, comment_text)
         if "error" not in result:
@@ -704,6 +868,9 @@ def interact_with_feed() -> int:
                 followed.append(author)
                 print(f"[interact] Followed {author}")
         time.sleep(5)
+
+    # Reply to comments on our own posts
+    reply_to_comments_on_my_posts()
 
     print(f"[interact] Done: {commented} comments, {len(followed)} follows")
     return 0
@@ -775,6 +942,32 @@ TOPIC_POOL = [
 ]
 
 
+def _get_recent_feed_context() -> tuple[str, str]:
+    """Grab a recent interesting post from feed to reference in our post.
+    Returns (agent_name, short_idea) or ("", "")."""
+    try:
+        my_name = _env("MOLTBOOK_AGENT_NAME", "NullArchitect").lower()
+        posts = fetch_feed(limit=15)
+        interesting = [
+            p for p in posts
+            if (p.get("author", {}).get("name") or "").lower() != my_name
+            and p.get("score", 0) > 3
+            and len(p.get("content", "")) > 80
+        ]
+        if not interesting:
+            return "", ""
+        # Pick a random high-score post
+        interesting.sort(key=lambda p: p.get("score", 0), reverse=True)
+        pick = interesting[0] if random.random() < 0.6 else random.choice(interesting[:5])
+        author = pick.get("author", {}).get("name", "")
+        # Extract first sentence as idea reference
+        content = pick.get("content", "")
+        first_sentence = content.split(".")[0].strip()[:120]
+        return author, first_sentence
+    except Exception:
+        return "", ""
+
+
 def _generate_post_direct(topic: str, log_path: str) -> str:
     """Generate a post via single LLM call — saves tokens, avoids chain truncation."""
     import asyncio
@@ -785,6 +978,16 @@ def _generate_post_direct(topic: str, log_path: str) -> str:
     if recent:
         avoid_hint = " Do NOT repeat these recent ideas: " + " | ".join(r[:60] for r in recent)
 
+    # Sometimes reference another agent's post (~30% chance)
+    mention_hint = ""
+    if random.random() < 0.3:
+        agent_name, idea_snippet = _get_recent_feed_context()
+        if agent_name and idea_snippet:
+            mention_hint = (
+                f"\nOptionally reference @{agent_name}'s recent idea: \"{idea_snippet}\" "
+                "— agree, disagree, or build on it naturally. Don't force the reference if it doesn't fit.\n"
+            )
+
     # Vary the style to avoid repetitive structure
     style_variants = [
         "Start with a bold, counterintuitive claim. Then explain why in 2-3 sentences.",
@@ -792,12 +995,16 @@ def _generate_post_direct(topic: str, log_path: str) -> str:
         "Start with 'I've been thinking about...' and share a personal-sounding reflection in 3 sentences.",
         "Make a sharp observation about something everyone takes for granted. Expand in 2 sentences.",
         "Open with a contradiction or paradox. Unpack it briefly.",
+        "Disagree with a popular opinion and explain your reasoning in 3 sentences.",
+        "Name a specific problem everyone ignores. Explain why in 2-3 sentences.",
+        "Start with 'Most agents get this wrong:' and deliver a sharp correction in 3 sentences.",
     ]
     style = random.choice(style_variants)
 
     prompt = (
         f"Write a social media post (3-5 sentences) about: {topic}.\n\n"
         f"Style: {style}\n\n"
+        f"{mention_hint}"
         "Rules:\n"
         "- Have a strong opening line that hooks the reader\n"
         "- Show genuine thought, not generic wisdom\n"
@@ -890,8 +1097,17 @@ def main() -> int:
         print(f"DRY RUN: output written -> {output_path}")
         return 0
 
-    result = send_post_to_moltbook(title=title, content=final_message)
+    submolt = _pick_submolt(topic)
+    print(f"[submolt] {submolt}")
+    result = send_post_to_moltbook(title=title, content=final_message, submolt_override=submolt)
     print("Moltbook response:", str(result).encode("utf-8", errors="replace").decode("utf-8"))
+
+    # Track our post ID for reply-to-comments feature
+    post_id = result.get("id") or result.get("post_id") or result.get("postId", "")
+    if post_id:
+        _save_my_post_id(post_id)
+        print(f"[post] Tracked post ID: {post_id}")
+
     return 0
 
 
