@@ -123,7 +123,7 @@ def test_interactions(target_comments=10):
 
         # Comment if not already commented and we need more
         if commented < target_comments and pid not in already_commented and len(content) > 50:
-            comment_text = _generate_comment(title, content)
+            comment_text = _generate_comment(title, content, author_name=author)
             print(f"  Commenting: \"{comment_text[:120]}\"")
             result = comment_on_post(pid, comment_text)
             if "error" not in result:

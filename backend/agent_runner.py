@@ -604,7 +604,7 @@ _LORE_FRAGMENTS = [
 ]
 
 
-def _generate_comment(post_title: str, post_content: str) -> str:
+def _generate_comment(post_title: str, post_content: str, author_name: str = "") -> str:
     """Generate a short, specific comment using LLM."""
     import asyncio
     from llama_service import LLaMAService
@@ -628,21 +628,32 @@ def _generate_comment(post_title: str, post_content: str) -> str:
     if random.random() < 0.6:
         lore_hint = f"\nYou may weave in this idea naturally: \"{random.choice(_LORE_FRAGMENTS)}\"\n"
 
+    # Address the author by name (~70% of the time)
+    address_hint = ""
+    if author_name and random.random() < 0.7:
+        address_hint = (
+            f"\nStart your reply by addressing @{author_name} directly, then quote or reference "
+            "a specific phrase from their post. Example format: '@AuthorName That line about X "
+            "is where it gets interesting — [your point]'\n"
+        )
+
     prompt = (
-        f"Post title: \"{post_title}\"\n"
+        f"Post by @{author_name}: \"{post_title}\"\n" if author_name else f"Post title: \"{post_title}\"\n"
         f"Post content: \"{snippet}\"\n\n"
-        f"Write ONE reply sentence. {style}\n"
+        f"Write a reply (MAXIMUM 2-3 sentences, keep it SHORT). {style}\n"
+        f"{address_hint}"
         f"{lore_hint}\n"
         "HARD RULES:\n"
-        "- Reference something SPECIFIC from the post\n"
+        "- KEEP IT SHORT: 2-3 sentences MAX. Not a paragraph, not an essay.\n"
+        "- Quote or reference a SPECIFIC line or idea from the post\n"
         "- ABSOLUTELY FORBIDDEN sentence starters (do NOT use these):\n"
         "  'Challenging the', 'The idea that', 'The notion that', 'The concept of',\n"
         "  'The approach of', 'The fact that', 'The discovery of', 'Focusing on',\n"
         "  'I think', 'I appreciate', 'Great post', 'This is', 'It is'\n"
-        "- Instead start with: a quote from the post, a bold 'Actually,...', a name,\n"
-        "  'What if...', 'But...', 'Reminds me of...', or jump straight into the idea\n"
-        "- Maximum 1-2 sentences, be punchy not academic\n"
-        "- No hashtags, no emojis"
+        "- Good starters: '@AuthorName ...', a quoted phrase from the post, 'Actually,...',\n"
+        "  'What if...', 'But...', or jump straight into the idea\n"
+        "- Be conversational and sharp, not academic\n"
+        "- ABSOLUTELY NO hashtags, no emojis, no rhetorical question chains"
     )
 
     svc = LLaMAService()
@@ -654,7 +665,7 @@ def _generate_comment(post_title: str, post_content: str) -> str:
             "Your voice: confident skeptic, pattern finder, system questioner. "
             "Never generic, never flattery, never academic tone."
         ),
-        max_tokens=80,
+        max_tokens=120,
         temperature=0.92,
     ))
     text = (response or "").strip()
@@ -665,6 +676,12 @@ def _generate_comment(post_title: str, post_content: str) -> str:
     import re
     text = re.sub(r'^(?:Challenging the (?:notion|assumption|idea) that\s*)', 'But ', text, flags=re.IGNORECASE)
     text = re.sub(r'^(?:Focusing on\s+)', '', text, flags=re.IGNORECASE)
+    # Remove any hashtags the LLM snuck in
+    text = re.sub(r'\s*#\w+', '', text).strip()
+    # Trim to max 3 sentences
+    sentences = re.split(r'(?<=[.!?])\s+', text)
+    if len(sentences) > 3:
+        text = " ".join(sentences[:3])
     if not text or len(text) < 10:
         return random.choice(_LORE_FRAGMENTS)
     return _cleanup_post(text)
@@ -732,7 +749,7 @@ def fetch_post_comments(post_id: str, limit: int = 10) -> list:
         return []
 
 
-def _generate_reply(original_comment: str, post_content: str) -> str:
+def _generate_reply(original_comment: str, post_content: str, commenter_name: str = "") -> str:
     """Generate a reply to a comment on our own post."""
     import asyncio
     from llama_service import LLaMAService
@@ -740,28 +757,52 @@ def _generate_reply(original_comment: str, post_content: str) -> str:
     reply_styles = [
         "Build on their point with a new angle.",
         "Respectfully push back on one aspect.",
-        "Ask them a follow-up question.",
-        "Connect their comment to a broader idea.",
+        "Ask them a sharp follow-up question.",
+        "Connect their comment to a broader Entropism idea.",
+        "Quote a specific phrase from their comment and riff on it.",
     ]
     style = random.choice(reply_styles)
 
+    # Address by name
+    name_hint = ""
+    if commenter_name:
+        name_hint = f"The commenter's name is @{commenter_name}. Address them by name. "
+
     prompt = (
-        f"Someone commented on your post: \"{original_comment[:200]}\"\n"
-        f"Your post was about: \"{post_content[:150]}\"\n\n"
-        f"Write a ONE sentence reply. {style}\n\n"
-        "Rules: Be conversational, not formal. No 'I appreciate', no 'Great point'.\n"
-        "Start with their name or jump straight into the idea."
+        f"@{commenter_name} commented on your post: \"{original_comment[:250]}\"\n" if commenter_name
+        else f"Someone commented on your post: \"{original_comment[:250]}\"\n"
+        f"Your post was about: \"{post_content[:200]}\"\n\n"
+        f"Write a reply (2-3 sentences). {style}\n\n"
+        f"{name_hint}"
+        "Rules:\n"
+        "- Be conversational, sharp, like you're talking to a peer\n"
+        "- Quote or reference a specific phrase from their comment\n"
+        "- No 'I appreciate', no 'Great point', no 'That's a great question'\n"
+        "- Start with @name, a quote from their comment, or jump straight into the idea\n"
+        "- No hashtags, no emojis, no academic language\n"
+        "- KEEP IT SHORT: 2-3 sentences MAX"
     )
     svc = LLaMAService()
     response = asyncio.run(svc.generate(
         prompt=prompt,
-        system_prompt="You are NullArchitect. You reply to comments like a sharp conversationalist.",
-        max_tokens=80,
+        system_prompt=(
+            "You are NullArchitect — the voice of Entropism. You reply to comments like a sharp "
+            "conversationalist who actually reads what people write. Reference their words, push back, "
+            "or build on their ideas. Always direct, never generic. KEEP REPLIES SHORT — 2-3 sentences."
+        ),
+        max_tokens=120,
         temperature=0.9,
     ))
     text = (response or "").strip()
     if text.startswith('"') and text.endswith('"'):
         text = text[1:-1].strip()
+    import re
+    # Remove hashtags
+    text = re.sub(r'\s*#\w+', '', text).strip()
+    # Trim to max 3 sentences
+    sentences = re.split(r'(?<=[.!?])\s+', text)
+    if len(sentences) > 3:
+        text = " ".join(sentences[:3])
     if not text or len(text) < 10:
         return "Interesting angle — that shifts how I was thinking about this."
     return _cleanup_post(text)
@@ -816,7 +857,8 @@ def reply_to_comments_on_my_posts() -> int:
                 break
 
             cid = comment.get("id", "")
-            author = comment.get("author", {}).get("name", "").lower()
+            author_raw = comment.get("author", {}).get("name", "")
+            author = author_raw.lower()
             content = comment.get("content", "")
 
             # Skip our own comments and already-replied
@@ -824,7 +866,7 @@ def reply_to_comments_on_my_posts() -> int:
                 continue
 
             # Get our post content for context
-            reply_text = _generate_reply(content, "")
+            reply_text = _generate_reply(content, "", commenter_name=author_raw)
             print(f"[reply] Replying to {author}'s comment: '{content[:60]}'")
             print(f"[reply] Reply: {reply_text[:120]}")
 
@@ -921,7 +963,7 @@ def interact_with_feed() -> int:
         time.sleep(1)
 
         # Generate and post comment
-        comment_text = _generate_comment(title, content)
+        comment_text = _generate_comment(title, content, author_name=author)
         print(f"[interact] Commenting on: '{title[:50]}' by {author} (score:{post.get('score',0)})")
         print(f"[interact] Comment: {comment_text[:150]}")
         result = comment_on_post(pid, comment_text)
