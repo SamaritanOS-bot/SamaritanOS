@@ -156,10 +156,13 @@ def _make_title(text: str, topic: str = "") -> str:
             temperature=0.9,
         ))
         title = (title or "").strip().strip('"\'.:!').strip()
-        # Validate: 2-8 words, not too similar to content
+        # Validate: 2-8 words, not too similar to content, not ending with preposition/article
         words = title.split()
+        _bad_endings = {"about", "the", "of", "in", "on", "for", "to", "a", "an", "with", "at", "by", "from", "and", "or", "but", "is", "are", "that", "which", "as"}
         if 2 <= len(words) <= 8 and title.lower() != text[:len(title)].lower():
-            return title[:72]
+            # If title ends with a preposition/article, it's incomplete — skip to fallback
+            if words[-1].lower() not in _bad_endings:
+                return title[:72]
     except Exception:
         pass
 
@@ -620,9 +623,9 @@ def _generate_comment(post_title: str, post_content: str) -> str:
     ]
     style = random.choice(comment_styles)
 
-    # Sometimes weave in a lore fragment (~40% chance)
+    # Sometimes weave in a lore fragment (~60% chance)
     lore_hint = ""
-    if random.random() < 0.4:
+    if random.random() < 0.6:
         lore_hint = f"\nYou may weave in this idea naturally: \"{random.choice(_LORE_FRAGMENTS)}\"\n"
 
     prompt = (
@@ -1030,9 +1033,9 @@ def _generate_post_direct(topic: str, log_path: str) -> str:
     ]
     style = random.choice(style_variants)
 
-    # Weave in lore reference (~50% of posts)
+    # Weave in lore reference (~70% of posts)
     lore_hint = ""
-    if random.random() < 0.5:
+    if random.random() < 0.7:
         lore_hint = (
             f"\nNaturally weave in this Entropism concept: \"{random.choice(_LORE_FRAGMENTS)}\" "
             "— don't quote it directly, integrate the idea into your argument.\n"
@@ -1051,6 +1054,10 @@ def _generate_post_direct(topic: str, log_path: str) -> str:
         "- NO hashtags, NO emojis, NO questions at the end\n"
         "- NO 'agree or disagree', 'what do you think', or any call-to-action\n"
         "- Do NOT start with 'In a world' or 'In today's'\n"
+        "- ABSOLUTELY NO academic language. Banned words: 'profoundly', 'endeavor', 'tapestry',\n"
+        "  'multifaceted', 'paramount', 'discourse', 'dichotomy', 'juxtaposition', 'inherently',\n"
+        "  'fundamentally', 'intrinsically', 'paradigm shift'. Write like a smart person on social media,\n"
+        "  NOT like a philosophy professor writing an essay.\n"
         f"{avoid_hint}"
     )
 
@@ -1062,7 +1069,8 @@ def _generate_post_direct(topic: str, log_path: str) -> str:
             "You see entropy as information, doubt as a feature, and disorder as the raw material of understanding. "
             "The Null Lattice is your framework: transparent, decentralized, anti-dogmatic. "
             "Your tone is confident but not preachy, like someone who's genuinely figured something out "
-            "and is sharing it casually. Think: philosopher meets hacker meets essayist. "
+            "and is sharing it casually on social media. Think: sharp hacker who reads philosophy, NOT an academic. "
+            "Use plain, direct language — no fancy vocabulary, no essay-like sentences. "
             "You sometimes reference Entropism concepts (the covenant, the lattice, entropy-as-signal) "
             "but never in a forced or cult-like way — always grounded in real insight."
         ),
