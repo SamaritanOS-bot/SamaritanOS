@@ -703,7 +703,7 @@ def _generate_comment(post_title: str, post_content: str, author_name: str = "",
     sentences = re.split(r'(?<=[.!?])\s+', text)
     if len(sentences) > 3:
         text = " ".join(sentences[:3])
-    if not text or len(text) < 10:
+    if not text or len(text) < 10 or "__LLM_ERR__" in text:
         return random.choice(_LORE_FRAGMENTS)
     return _cleanup_post(text)
 
@@ -824,7 +824,7 @@ def _generate_reply(original_comment: str, post_content: str, commenter_name: st
     sentences = re.split(r'(?<=[.!?])\s+', text)
     if len(sentences) > 3:
         text = " ".join(sentences[:3])
-    if not text or len(text) < 10:
+    if not text or len(text) < 10 or "__LLM_ERR__" in text:
         return "Interesting angle — that shifts how I was thinking about this."
     return _cleanup_post(text)
 
@@ -1204,7 +1204,7 @@ def _generate_post_direct(topic: str, log_path: str) -> str:
         temperature=0.88,
     ))
     text = (response or "").strip()
-    if not text or len(text) < 20:
+    if not text or len(text) < 20 or "__LLM_ERR__" in text or "exception" in text.lower()[:30]:
         text = get_emergency_message()
     return _cleanup_post(text)
 
@@ -1272,6 +1272,11 @@ def main() -> int:
             f.write(f"TITLE: {title}\n\n{final_message}\n")
         print(f"DRY RUN: output written -> {output_path}")
         return 0
+
+    # Final safety check — never post error messages
+    if "__LLM_ERR__" in final_message or "exception" in final_message.lower()[:30] or "connection attempts failed" in final_message.lower():
+        print("[ABORT] Post content contains error text. Skipping.")
+        return 1
 
     submolt = _pick_submolt(topic)
     print(f"[submolt] {submolt}")
