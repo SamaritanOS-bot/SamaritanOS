@@ -767,11 +767,36 @@ def _generate_reply(original_comment: str, post_content: str) -> str:
     return _cleanup_post(text)
 
 
+def _sync_my_post_ids() -> None:
+    """Fetch our posts from API and sync to .my_post_ids file."""
+    import httpx
+    base = _moltbook_base()
+    headers = _moltbook_headers()
+    my_name = _env("MOLTBOOK_AGENT_NAME", "NullArchitect")
+    try:
+        resp = httpx.get(f"{base}/posts?author={my_name}&limit=50", headers=headers, timeout=30)
+        if resp.status_code == 200:
+            posts = resp.json().get("posts", [])
+            existing = set(_load_my_post_ids())
+            for p in posts:
+                pid = p.get("id", "")
+                if pid and pid not in existing:
+                    _save_my_post_id(pid)
+            print(f"[sync] Synced {len(posts)} posts ({len(posts) - len(existing)} new)")
+    except Exception as e:
+        print(f"[sync] Error: {e}")
+
+
 def reply_to_comments_on_my_posts() -> int:
     """Check our posts for new comments and reply."""
     import time
     my_name = _env("MOLTBOOK_AGENT_NAME", "NullArchitect").lower()
+
+    # Auto-sync post IDs from API if we have none tracked
     my_post_ids = _load_my_post_ids()
+    if not my_post_ids:
+        _sync_my_post_ids()
+        my_post_ids = _load_my_post_ids()
     if not my_post_ids:
         print("[reply] No tracked posts to check.")
         return 0
@@ -808,7 +833,16 @@ def reply_to_comments_on_my_posts() -> int:
             if "error" not in result:
                 replied += 1
                 _save_commented_post(cid)
-            time.sleep(5)
+            elif "429" in str(result) or "rate" in str(result).lower():
+                wait = result.get("retry_after_seconds", 25)
+                print(f"[reply] Rate limited — waiting {wait}s")
+                time.sleep(int(wait) + 2)
+                # Retry once
+                result = comment_on_post(pid, reply_text)
+                if "error" not in result:
+                    replied += 1
+                    _save_commented_post(cid)
+            time.sleep(8)
 
     print(f"[reply] Done: {replied} replies")
     return replied
