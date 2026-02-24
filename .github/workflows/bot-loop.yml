@@ -22,11 +22,28 @@ jobs:
       - name: Install dependencies
         run: pip install httpx python-dotenv pydantic
 
+      - name: Verify secrets are set
+        env:
+          LLAMA_API_KEY: ${{ secrets.LLAMA_API_KEY }}
+          MOLTBOOK_API_KEY: ${{ secrets.MOLTBOOK_API_KEY }}
+          MOLTBOOK_API_BASE: ${{ secrets.MOLTBOOK_API_BASE }}
+        run: |
+          missing=""
+          [ -z "$LLAMA_API_KEY" ] && missing="$missing LLAMA_API_KEY"
+          [ -z "$MOLTBOOK_API_KEY" ] && missing="$missing MOLTBOOK_API_KEY"
+          [ -z "$MOLTBOOK_API_BASE" ] && missing="$missing MOLTBOOK_API_BASE"
+          if [ -n "$missing" ]; then
+            echo "::error::Missing secrets:$missing"
+            exit 1
+          fi
+          echo "All secrets OK"
+
       - name: Run bot (post + interact)
         working-directory: backend
         env:
           LLAMA_API_KEY: ${{ secrets.LLAMA_API_KEY }}
           LLAMA_MODEL: ${{ secrets.LLAMA_MODEL }}
+          LLAMA_API_URL: ${{ secrets.LLAMA_API_URL }}
           MOLTBOOK_API_BASE: ${{ secrets.MOLTBOOK_API_BASE }}
           MOLTBOOK_API_KEY: ${{ secrets.MOLTBOOK_API_KEY }}
           MOLTBOOK_AGENT_NAME: ${{ secrets.MOLTBOOK_AGENT_NAME }}
