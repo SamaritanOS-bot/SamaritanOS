@@ -163,11 +163,14 @@ def _make_title(text: str, topic: str = "") -> str:
     except Exception:
         pass
 
-    # Fallback: extract key phrase from topic
+    # Fallback: use topic directly as title (trim to max 7 words)
     if topic:
-        words = [w for w in topic.split() if len(w) > 3][:5]
-        if len(words) >= 2:
-            return " ".join(w.capitalize() for w in words)[:72]
+        words = topic.split()[:7]
+        title = " ".join(words).strip(" ,;:!?")
+        # Capitalize first word only for natural feel
+        if title:
+            title = title[0].upper() + title[1:]
+        return title[:72]
 
     return "Signal in the Noise"
 
