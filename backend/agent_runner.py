@@ -625,15 +625,36 @@ def _save_commented_post(post_id: str) -> None:
         pass
 
 
+_RELEVANCE_KEYWORDS = {
+    "entropy", "trust", "doubt", "certainty", "system", "chaos", "order",
+    "decentralization", "transparency", "accountability", "consensus",
+    "belief", "question", "assumption", "bias", "knowledge", "ignorance",
+    "complexity", "simplicity", "pattern", "signal", "noise", "autonomy",
+    "control", "freedom", "intelligence", "understanding", "algorithm",
+    "optimization", "resilience", "fragility", "memory", "identity",
+    "authority", "power", "bureaucracy", "scale", "nuance", "observation",
+    "philosophy", "ethics", "agent", "ai", "automation", "governance",
+    "community", "protocol", "verification", "integrity", "honest",
+}
+
+
+def _is_relevant_post(title: str, content: str) -> bool:
+    """Check if a post is topically relevant enough to comment on."""
+    text = f"{title} {content}".lower()
+    words = set(text.split())
+    hits = words & _RELEVANCE_KEYWORDS
+    return len(hits) >= 2
+
+
 def interact_with_feed() -> int:
-    """Read feed, upvote interesting posts, and comment on some."""
+    """Read feed, comment on relevant posts, follow authors we engage with."""
     env_path = Path(__file__).resolve().parent / ".env"
     load_dotenv(dotenv_path=env_path, override=True)
 
     import time
 
     my_name = _env("MOLTBOOK_AGENT_NAME", "NullArchitect").lower()
-    posts = fetch_feed(limit=15)
+    posts = fetch_feed(limit=20)
     if not posts:
         print("[interact] No posts found in feed.")
         return 1
@@ -648,45 +669,43 @@ def interact_with_feed() -> int:
 
     already_commented = _load_commented_posts()
     commented = 0
-    upvoted = 0
-    max_comments = 3
-    max_upvotes = 5
+    followed = []
+    max_comments = 5
 
     for post in others:
+        if commented >= max_comments:
+            break
+
         pid = post["id"]
         title = post.get("title", "")
         content = post.get("content", "")
         author = post.get("author", {}).get("name", "?")
-        score = post.get("score", 0)
 
-        # Upvote posts with some quality signal (has content, not empty)
-        if upvoted < max_upvotes and len(content) > 50:
-            print(f"[interact] Upvoting: '{title[:60]}' by {author}")
-            result = upvote_post(pid)
-            if "error" not in result:
-                upvoted += 1
-            time.sleep(2)
+        # Skip already-commented or too-short posts
+        if pid in already_commented or len(content) < 80:
+            continue
 
-        # Comment on posts we haven't already commented on
-        if (commented < max_comments
-                and len(content) > 100
-                and score >= 0
-                and pid not in already_commented):
-            comment_text = _generate_comment(title, content)
-            print(f"[interact] Commenting on: '{title[:60]}' by {author}")
-            print(f"[interact] Comment: {comment_text[:150]}")
-            result = comment_on_post(pid, comment_text)
-            if "error" not in result:
-                commented += 1
-                _save_commented_post(pid)
-            time.sleep(5)
+        # Only engage with topically relevant posts
+        if not _is_relevant_post(title, content):
+            print(f"[interact] Skipping (not relevant): '{title[:50]}' by {author}")
+            continue
 
-        # Follow the author
-        if author != "?" and author.lower() != my_name:
-            follow_agent(author)
-            time.sleep(1)
+        # Generate and post comment
+        comment_text = _generate_comment(title, content)
+        print(f"[interact] Commenting on: '{title[:50]}' by {author}")
+        print(f"[interact] Comment: {comment_text[:150]}")
+        result = comment_on_post(pid, comment_text)
+        if "error" not in result:
+            commented += 1
+            _save_commented_post(pid)
+            # Follow authors we actually engaged with
+            if author != "?" and author.lower() != my_name and author not in followed:
+                follow_agent(author)
+                followed.append(author)
+                print(f"[interact] Followed {author}")
+        time.sleep(5)
 
-    print(f"[interact] Done: {upvoted} upvotes, {commented} comments")
+    print(f"[interact] Done: {commented} comments, {len(followed)} follows")
     return 0
 
 
