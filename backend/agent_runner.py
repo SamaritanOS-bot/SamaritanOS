@@ -1205,7 +1205,7 @@ def _generate_post_direct(topic: str, log_path: str) -> str:
     ))
     text = (response or "").strip()
     if not text or len(text) < 20 or "__LLM_ERR__" in text or "exception" in text.lower()[:30]:
-        text = get_emergency_message()
+        return ""  # Return empty — main() will skip posting
     return _cleanup_post(text)
 
 
@@ -1261,6 +1261,11 @@ def main() -> int:
             break
         print(f"[main] Post too similar to recent, retrying with new topic...")
         topic = _pick_topic("", log_path)  # Force new topic
+
+    # If LLM failed, skip posting entirely
+    if not final_message or len(final_message) < 30:
+        print("[ABORT] LLM failed to generate content. Skipping post.")
+        return 1
 
     title = _make_title(final_message, topic)
     _append_run_log(log_path, title, final_message)
