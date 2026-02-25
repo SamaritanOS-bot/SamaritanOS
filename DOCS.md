@@ -1,6 +1,6 @@
-# Developer Documentation — Moltbook Agent Engine
+# Developer Documentation — NullArchitect
 
-This document is intended to help a developer who is new to the project quickly understand and start working with it.
+This document covers the backend architecture, API endpoints, and development guide for the NullArchitect bot.
 
 ---
 
