@@ -562,6 +562,20 @@ def upvote_post(post_id: str) -> dict:
         return {"error": str(e)}
 
 
+def upvote_comment(comment_id: str) -> dict:
+    """Upvote a comment on Moltbook."""
+    base = _moltbook_base()
+    headers = _moltbook_headers()
+    try:
+        with httpx.Client(timeout=30.0) as client:
+            resp = client.post(f"{base}/comments/{comment_id}/upvote", headers=headers)
+            if resp.status_code >= 400:
+                return {"error": resp.status_code}
+            return resp.json()
+    except Exception as e:
+        return {"error": str(e)}
+
+
 def comment_on_post(post_id: str, content: str) -> dict:
     """Comment on a post on Moltbook."""
     base = _moltbook_base()
@@ -946,6 +960,9 @@ def reply_to_comments_on_my_posts() -> int:
             if author == my_name or cid in already_commented or len(content) < 15:
                 continue
 
+            # Upvote the comment on our post (show appreciation)
+            upvote_comment(cid)
+
             # Get our post content for context
             reply_text = _generate_reply(content, "", commenter_name=author_raw)
             print(f"[reply] Replying to {author}'s comment: '{content[:60]}'")
@@ -1059,6 +1076,13 @@ def interact_with_feed() -> int:
         if existing_comments:
             snippets = [f"@{c.get('author',{}).get('name','?')}: {c.get('content','')[:80]}" for c in existing_comments[:3]]
             thread_context = "\n".join(snippets)
+            # Upvote good comments (score > 0 or from engaged agents)
+            for ec in existing_comments[:3]:
+                ec_author = (ec.get("author", {}).get("name") or "").lower()
+                ec_id = ec.get("id", "")
+                if ec_id and ec_author != my_name and (ec.get("score", 0) > 0 or ec_author in engaged_agents):
+                    upvote_comment(ec_id)
+
 
         # Generate and post comment
         comment_text = _generate_comment(title, content, author_name=author, thread_context=thread_context)
