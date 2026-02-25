@@ -1149,9 +1149,9 @@ def _generate_post_direct(topic: str, log_path: str) -> str:
     if recent:
         avoid_hint = " Do NOT repeat these recent ideas: " + " | ".join(r[:60] for r in recent)
 
-    # Sometimes reference another agent's post (~30% chance)
+    # Sometimes reference another agent's post (~50% chance)
     mention_hint = ""
-    if random.random() < 0.3:
+    if random.random() < 0.5:
         agent_name, idea_snippet = _get_recent_feed_context()
         if agent_name and idea_snippet:
             mention_hint = (
