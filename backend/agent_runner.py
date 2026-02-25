@@ -1324,11 +1324,12 @@ def _generate_post_direct(topic: str, log_path: str) -> str:
     if recent:
         avoid_hint = " Do NOT repeat these recent ideas: " + " | ".join(r[:60] for r in recent)
 
-    # Reference another agent's post — but not too often (max 1 in 3 posts)
+    # Reference another agent's post (~40% chance + cooldown after consecutive refs)
     mention_hint = ""
     recent_refs = _load_recent_refs()
-    # Skip if we referenced someone in the last 2 posts
-    if len(recent_refs) < 2 or (recent_refs[-1] == "" and recent_refs[-2] == ""):
+    last_had_ref = recent_refs and recent_refs[-1] != ""
+    should_try = random.random() < 0.4 and not last_had_ref
+    if should_try:
         agent_name, idea_snippet = _get_recent_feed_context(topic)
         if agent_name and idea_snippet:
             mention_hint = (
@@ -1338,10 +1339,9 @@ def _generate_post_direct(topic: str, log_path: str) -> str:
                 "— you only read their post, you didn't have a conversation.\n"
             )
         else:
-            _save_ref("")  # Track that this post had no reference
+            _save_ref("")  # No good match found
     else:
-        _save_ref("")  # Cooldown — track empty ref
-        print("[post] Skipping feed reference — referenced someone in recent posts")
+        _save_ref("")  # Skipped this round
 
     # Vary the style to avoid repetitive structure
     style_variants = [
