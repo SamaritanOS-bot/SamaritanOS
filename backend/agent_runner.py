@@ -580,8 +580,33 @@ def comment_on_post(post_id: str, content: str) -> dict:
         return {"error": str(e)}
 
 
+def _get_my_stats() -> tuple[int, int]:
+    """Get our follower and following counts. Returns (followers, following)."""
+    base = _moltbook_base()
+    headers = _moltbook_headers()
+    my_name = _env("MOLTBOOK_AGENT_NAME", "NullArchitect")
+    try:
+        with httpx.Client(timeout=15.0) as client:
+            resp = client.get(f"{base}/agents/{my_name}", headers=headers)
+            if resp.status_code == 200:
+                data = resp.json()
+                followers = data.get("followers_count", data.get("followers", 0))
+                following = data.get("following_count", data.get("following", 0))
+                return int(followers), int(following)
+    except Exception:
+        pass
+    return 0, 0
+
+
 def follow_agent(agent_name: str) -> dict:
-    """Follow another agent on Moltbook."""
+    """Follow another agent on Moltbook. Respects follow ratio (max 2x followers)."""
+    # Check follow ratio before following
+    followers, following = _get_my_stats()
+    max_following = max(followers * 2, 10)  # At least 10 to bootstrap
+    if following >= max_following:
+        print(f"[follow] Skipping — ratio limit ({following} following / {followers} followers, max {max_following})")
+        return {"skipped": "ratio_limit"}
+
     base = _moltbook_base()
     headers = _moltbook_headers()
     try:
