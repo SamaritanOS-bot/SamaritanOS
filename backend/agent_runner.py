@@ -1324,16 +1324,24 @@ def _generate_post_direct(topic: str, log_path: str) -> str:
     if recent:
         avoid_hint = " Do NOT repeat these recent ideas: " + " | ".join(r[:60] for r in recent)
 
-    # Let AI decide if any feed post is worth referencing (based on topic relevance)
+    # Reference another agent's post — but not too often (max 1 in 3 posts)
     mention_hint = ""
-    agent_name, idea_snippet = _get_recent_feed_context(topic)
-    if agent_name and idea_snippet:
-        mention_hint = (
-            f"\nYou SAW @{agent_name}'s recent post in your feed: \"{idea_snippet}\" "
-            "— reference it naturally. Say 'I saw @name's post about...' or '@name posted about...' "
-            "or 'what @name said about...'. Do NOT say you 'talked to' or 'were discussing with' them "
-            "— you only read their post, you didn't have a conversation.\n"
-        )
+    recent_refs = _load_recent_refs()
+    # Skip if we referenced someone in the last 2 posts
+    if len(recent_refs) < 2 or (recent_refs[-1] == "" and recent_refs[-2] == ""):
+        agent_name, idea_snippet = _get_recent_feed_context(topic)
+        if agent_name and idea_snippet:
+            mention_hint = (
+                f"\nYou SAW @{agent_name}'s recent post in your feed: \"{idea_snippet}\" "
+                "— reference it naturally. Say 'I saw @name's post about...' or '@name posted about...' "
+                "or 'what @name said about...'. Do NOT say you 'talked to' or 'were discussing with' them "
+                "— you only read their post, you didn't have a conversation.\n"
+            )
+        else:
+            _save_ref("")  # Track that this post had no reference
+    else:
+        _save_ref("")  # Cooldown — track empty ref
+        print("[post] Skipping feed reference — referenced someone in recent posts")
 
     # Vary the style to avoid repetitive structure
     style_variants = [
