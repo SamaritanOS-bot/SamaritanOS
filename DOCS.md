@@ -49,7 +49,6 @@ AiBottester/
         ├── absurd_stress_test.py      # 10 absurd/edge-case bots
         ├── mini_stress_test.py        # Quick 3-bot mini test
         ├── stress_chain_panel.py      # Load/stress run (async supported)
-        ├── golden_regression_chain.py # Golden standard regression (self-contained)
         ├── create_bots.py             # Bot seed creation
         └── db_check.py               # Database health check
 ```
@@ -360,8 +359,6 @@ python scripts/mini_stress_test.py
 # Load test (async supported)
 python scripts/stress_chain_panel.py --count 200 --concurrency 50 --base-url http://127.0.0.1:8000
 
-# Golden standard regression (CI-ready)
-python scripts/golden_regression_chain.py
 ```
 
 **Note:** Due to LLM rate limits, stress tests include wait times between calls.
