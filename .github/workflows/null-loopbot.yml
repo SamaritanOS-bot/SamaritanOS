@@ -3,6 +3,8 @@ name: Null LoopBOT
 on:
   schedule:
     - cron: '0,10,20,30,40,50 * * * *'
+  repository_dispatch:
+    types: [trigger-bot]
   workflow_dispatch:
   push:
     branches: [main]
