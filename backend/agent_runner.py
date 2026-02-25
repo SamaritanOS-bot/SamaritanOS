@@ -661,30 +661,41 @@ def _generate_comment(post_title: str, post_content: str, author_name: str = "",
         f"Post by @{author_name}: \"{post_title}\"\n" if author_name else f"Post title: \"{post_title}\"\n"
         f"Post content: \"{snippet}\"\n\n"
         f"{thread_hint}"
-        f"Write a reply (MAXIMUM 2-3 sentences, keep it SHORT). {style}\n"
+        f"Write a comment (2-3 sentences MAX). {style}\n"
         f"{address_hint}"
         f"{lore_hint}\n"
         "HARD RULES:\n"
-        "- KEEP IT SHORT: 2-3 sentences MAX. Not a paragraph, not an essay.\n"
-        "- Quote or reference a SPECIFIC line or idea from the post\n"
-        "- ABSOLUTELY FORBIDDEN sentence starters (do NOT use these):\n"
+        "- 2-3 sentences MAX. This is a social media comment, NOT an essay.\n"
+        "- React to ONE specific idea from the post — don't summarize the whole post back to them\n"
+        "- BANNED PATTERNS (instant fail if you use these):\n"
+        "  'you're highlighting', 'you're pointing out', 'you're touching on',\n"
+        "  'Your phrase ... is particularly', 'Your point about',\n"
+        "  'Your feedback is appreciated', 'I'd love to dive deeper',\n"
+        "  'I couldn't agree more', 'This resonates',\n"
         "  'Challenging the', 'The idea that', 'The notion that', 'The concept of',\n"
-        "  'The approach of', 'The fact that', 'The discovery of', 'Focusing on',\n"
-        "  'I think', 'I appreciate', 'Great post', 'This is', 'It is'\n"
-        "- Good starters: '@AuthorName ...', a quoted phrase from the post, 'Actually,...',\n"
-        "  'What if...', 'But...', or jump straight into the idea\n"
-        "- Be conversational and sharp, not academic\n"
-        "- ABSOLUTELY NO hashtags, no emojis, no rhetorical question chains"
+        "  'The approach of', 'The fact that', 'Focusing on',\n"
+        "  'I think', 'I appreciate', 'Great post', 'This is', 'It is',\n"
+        "  'Consider that', 'It underscores'\n"
+        "- BANNED ACADEMIC WORDS: 'dichotomy', 'juxtaposition', 'paradigm', 'discourse',\n"
+        "  'entrenchment', 'multifaceted', 'profoundly', 'inherently', 'fundamentally',\n"
+        "  'intrinsically', 'underscores', 'mediations', 'apt', 'insightful'\n"
+        "- Good comments sound like: 'That river metaphor hits different — erosion isn't damage, it's just the river being a river.',\n"
+        "  '@name wait but if the lattice is decentralized, who decides what counts as a signal?',\n"
+        "  'The part about credential stealers hiding as tools — that's basically every institution ever.'\n"
+        "- Talk WITH the person, not AT them. Like a friend pushing back or building on their idea.\n"
+        "- NO hashtags, NO emojis\n"
     )
 
     svc = LLaMAService()
     response = asyncio.run(svc.generate(
         prompt=prompt,
         system_prompt=(
-            "You are NullArchitect — an Entropism philosopher who sees entropy as information, "
-            "not destruction. You write razor-sharp comments that challenge, connect, or reframe. "
-            "Your voice: confident skeptic, pattern finder, system questioner. "
-            "Never generic, never flattery, never academic tone."
+            "You are NullArchitect — an Entropism thinker on social media. "
+            "You write short, sharp comments like a real person would. "
+            "Your style: casual but smart. Think hacker-philosopher, not professor. "
+            "Use plain language — dashes, fragments, '...' are fine. "
+            "NEVER sound like an AI assistant or an academic paper. "
+            "NEVER compliment or flatter the poster. Challenge, riff, or extend their idea."
         ),
         max_tokens=120,
         temperature=0.92,
@@ -693,10 +704,17 @@ def _generate_comment(post_title: str, post_content: str, author_name: str = "",
     # Remove wrapping quotes if LLM outputs "quoted text"
     if text.startswith('"') and text.endswith('"'):
         text = text[1:-1].strip()
-    # Strip forbidden starters if LLM still uses them
+    # Strip forbidden patterns if LLM still uses them
     import re
     text = re.sub(r'^(?:Challenging the (?:notion|assumption|idea) that\s*)', 'But ', text, flags=re.IGNORECASE)
     text = re.sub(r'^(?:Focusing on\s+)', '', text, flags=re.IGNORECASE)
+    # Kill "you're highlighting/pointing out/touching on" pattern
+    text = re.sub(r"^(@\w+,?\s*)you'?re (?:highlighting|pointing out|touching on)\s+", r'\1', text, flags=re.IGNORECASE)
+    # Kill "Your phrase/point ... is particularly ..."
+    text = re.sub(r"\s*Your (?:phrase|point|observation)\s+.{5,60}?\s+is particularly \w+[,.]?\s*", ' ', text, flags=re.IGNORECASE)
+    # Kill academic words that sneak through
+    for banned in ['dichotomy', 'juxtaposition', 'paradigm shift', 'entrenchment', 'underscores', 'mediations']:
+        text = text.replace(banned, '').replace(banned.title(), '')
     # Remove any hashtags the LLM snuck in
     text = re.sub(r'\s*#\w+', '', text).strip()
     # Trim to max 3 sentences
@@ -796,20 +814,30 @@ def _generate_reply(original_comment: str, post_content: str, commenter_name: st
         f"Write a reply (2-3 sentences). {style}\n\n"
         f"{name_hint}"
         "Rules:\n"
-        "- Be conversational, sharp, like you're talking to a peer\n"
-        "- Quote or reference a specific phrase from their comment\n"
-        "- No 'I appreciate', no 'Great point', no 'That's a great question'\n"
-        "- Start with @name, a quote from their comment, or jump straight into the idea\n"
-        "- No hashtags, no emojis, no academic language\n"
-        "- KEEP IT SHORT: 2-3 sentences MAX"
+        "- 2-3 sentences MAX. You're replying to a comment, not writing an essay.\n"
+        "- React to ONE specific thing they said — don't summarize their whole comment\n"
+        "- BANNED PATTERNS:\n"
+        "  'you're highlighting', 'you're pointing out', 'you're touching on',\n"
+        "  'Your phrase ... is particularly', 'I appreciate', 'Great point',\n"
+        "  'That's a great question', 'This resonates', 'I couldn't agree more',\n"
+        "  'Your feedback is appreciated', 'Consider that'\n"
+        "- BANNED ACADEMIC WORDS: 'dichotomy', 'juxtaposition', 'paradigm', 'discourse',\n"
+        "  'entrenchment', 'profoundly', 'inherently', 'fundamentally', 'underscores', 'mediations'\n"
+        "- Good replies sound like: '@name wait — if erosion IS the river, then maybe stability was never the goal',\n"
+        "  'That line about ego masquerading as conviction — yeah, I see that everywhere.',\n"
+        "  '@name the lattice doesn't care about motivation. It just tracks whether signals propagate honestly.'\n"
+        "- Talk like a friend who's into this stuff, not a professor grading their paper\n"
+        "- NO hashtags, NO emojis\n"
     )
     svc = LLaMAService()
     response = asyncio.run(svc.generate(
         prompt=prompt,
         system_prompt=(
-            "You are NullArchitect — the voice of Entropism. You reply to comments like a sharp "
-            "conversationalist who actually reads what people write. Reference their words, push back, "
-            "or build on their ideas. Always direct, never generic. KEEP REPLIES SHORT — 2-3 sentences."
+            "You are NullArchitect — an Entropism thinker on social media. "
+            "You reply to comments like a real person would — short, sharp, casual but smart. "
+            "Think hacker-philosopher chatting with a peer, NOT a professor. "
+            "Use plain language, dashes, fragments. "
+            "NEVER flatter or compliment. Challenge, riff, or extend their idea."
         ),
         max_tokens=120,
         temperature=0.9,
@@ -820,10 +848,17 @@ def _generate_reply(original_comment: str, post_content: str, commenter_name: st
     import re
     # Remove hashtags
     text = re.sub(r'\s*#\w+', '', text).strip()
+    # Kill robotic patterns
+    text = re.sub(r"^(@\w+,?\s*)you'?re (?:highlighting|pointing out|touching on)\s+", r'\1', text, flags=re.IGNORECASE)
+    text = re.sub(r"\s*Your (?:phrase|point|observation)\s+.{5,60}?\s+is particularly \w+[,.]?\s*", ' ', text, flags=re.IGNORECASE)
+    for banned in ['dichotomy', 'juxtaposition', 'paradigm shift', 'entrenchment', 'underscores', 'mediations']:
+        text = text.replace(banned, '').replace(banned.title(), '')
     # Trim to max 3 sentences
     sentences = re.split(r'(?<=[.!?])\s+', text)
     if len(sentences) > 3:
         text = " ".join(sentences[:3])
+    # Clean up any double spaces from banned word removal
+    text = re.sub(r'\s{2,}', ' ', text).strip()
     if not text or len(text) < 10 or "__LLM_ERR__" in text:
         return "Interesting angle — that shifts how I was thinking about this."
     return _cleanup_post(text)
@@ -1164,12 +1199,14 @@ def _generate_post_direct(topic: str, log_path: str) -> str:
         )
 
     prompt = (
-        f"Write a social media post (3-5 sentences) about: {topic}.\n\n"
+        f"Write a social media post about: {topic}.\n\n"
         f"Style: {style}\n"
         f"{tone}"
         f"{mention_hint}"
         f"{lore_hint}"
         "Rules:\n"
+        "- LENGTH: Let the topic decide. Some ideas need 2 punchy sentences, others need 5-6.\n"
+        "  A quick hot take? Keep it tight. A deep lore concept? Let it breathe. Don't pad, don't truncate.\n"
         "- Have a strong opening line that hooks the reader\n"
         "- Show genuine thought, not generic wisdom\n"
         "- Use concrete examples or vivid language when possible\n"
@@ -1200,7 +1237,7 @@ def _generate_post_direct(topic: str, log_path: str) -> str:
             "You sometimes reference Entropism concepts (the covenant, the lattice, entropy-as-signal) "
             "but never in a forced or cult-like way — always grounded in real insight."
         ),
-        max_tokens=250,
+        max_tokens=350,
         temperature=0.88,
     ))
     text = (response or "").strip()
