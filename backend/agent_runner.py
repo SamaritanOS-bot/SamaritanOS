@@ -760,8 +760,8 @@ def _generate_comment(post_title: str, post_content: str, author_name: str = "",
     sentences = re.split(r'(?<=[.!?])\s+', text)
     if len(sentences) > 3:
         text = " ".join(sentences[:3])
-    if not text or len(text) < 10 or "__LLM_ERR__" in text:
-        return random.choice(_LORE_FRAGMENTS)
+    if not text or len(text) < 10 or "__LLM_ERR__" in text or "exception" in text.lower()[:30]:
+        return ""  # Return empty — caller will skip posting
     return _cleanup_post(text)
 
 
@@ -827,7 +827,8 @@ def fetch_post_comments(post_id: str, limit: int = 10) -> list:
         return []
 
 
-def _generate_reply(original_comment: str, post_content: str, commenter_name: str = "") -> str:
+def _generate_reply(original_comment: str, post_content: str, commenter_name: str = "",
+                    previous_replies: list[str] | None = None) -> str:
     """Generate a reply to a comment on our own post."""
     import asyncio
     from llama_service import LLaMAService
@@ -846,10 +847,20 @@ def _generate_reply(original_comment: str, post_content: str, commenter_name: st
     if commenter_name:
         name_hint = f"The commenter's name is @{commenter_name}. Address them by name. "
 
+    # Context of what we already said on this post
+    prev_context = ""
+    if previous_replies:
+        prev_lines = "\n".join(f"- {r}" for r in previous_replies)
+        prev_context = (
+            f"\nYou already replied on this post with:\n{prev_lines}\n"
+            "DO NOT repeat the same ideas or phrases. Say something NEW or don't reply at all.\n"
+        )
+
     prompt = (
         f"@{commenter_name} commented on your post: \"{original_comment[:250]}\"\n" if commenter_name
         else f"Someone commented on your post: \"{original_comment[:250]}\"\n"
         f"Your post was about: \"{post_content[:200]}\"\n\n"
+        f"{prev_context}"
         f"Write a reply (2-3 sentences). {style}\n\n"
         f"{name_hint}"
         "Rules:\n"
@@ -946,7 +957,15 @@ def reply_to_comments_on_my_posts() -> int:
         if replied >= max_replies:
             break
 
-        comments = fetch_post_comments(pid, limit=5)
+        comments = fetch_post_comments(pid, limit=10)
+
+        # Build context: what we already said on this post
+        our_previous_replies = [
+            c.get("content", "")[:100]
+            for c in comments
+            if (c.get("author", {}).get("name") or "").lower() == my_name
+        ]
+
         for comment in comments:
             if replied >= max_replies:
                 break
@@ -956,23 +975,28 @@ def reply_to_comments_on_my_posts() -> int:
             author = author_raw.lower()
             content = comment.get("content", "")
 
-            # Skip our own comments and already-replied
+            # Skip our own comments, already-replied, or too short
             if author == my_name or cid in already_commented or len(content) < 15:
                 continue
 
             # Upvote the comment on our post (show appreciation)
             upvote_comment(cid)
 
-            # Get our post content for context
-            reply_text = _generate_reply(content, "", commenter_name=author_raw)
+            # Pass our previous replies as context so we don't repeat ourselves
+            reply_text = _generate_reply(content, "", commenter_name=author_raw,
+                                         previous_replies=our_previous_replies)
             print(f"[reply] Replying to {author}'s comment: '{content[:60]}'")
             print(f"[reply] Reply: {reply_text[:120]}")
 
             # Reply is a comment on the same post (Moltbook threads via parent_id if supported)
+            if not reply_text or len(reply_text) < 10:
+                continue  # LLM failed or empty — skip
+
             result = comment_on_post(pid, reply_text)
             if "error" not in result:
                 replied += 1
                 _save_commented_post(cid)
+                our_previous_replies.append(reply_text[:100])
             elif "429" in str(result) or "rate" in str(result).lower():
                 wait = result.get("retry_after_seconds", 25)
                 print(f"[reply] Rate limited — waiting {wait}s")
