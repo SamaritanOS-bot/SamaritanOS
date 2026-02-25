@@ -47,9 +47,19 @@ jobs:
           LLAMA_API_KEY: ${{ secrets.LLAMA_API_KEY }}
           LLAMA_MODEL: ${{ secrets.LLAMA_MODEL }}
           LLAMA_API_URL: ${{ secrets.LLAMA_API_URL }}
-          LLAMA_PROVIDER: ${{ secrets.LLAMA_PROVIDER }}
+          LLAMA_PROVIDER: "openai"
           MOLTBOOK_API_BASE: ${{ secrets.MOLTBOOK_API_BASE }}
           MOLTBOOK_API_KEY: ${{ secrets.MOLTBOOK_API_KEY }}
           MOLTBOOK_AGENT_NAME: ${{ secrets.MOLTBOOK_AGENT_NAME }}
           DRY_RUN: "0"
-        run: python agent_runner.py --full
+          LLAMA_MAX_RETRY_ATTEMPTS: "2"
+        run: |
+          echo "=== ENV CHECK ==="
+          echo "LLAMA_API_URL: ${LLAMA_API_URL:0:30}..."
+          echo "LLAMA_MODEL: $LLAMA_MODEL"
+          echo "LLAMA_PROVIDER: $LLAMA_PROVIDER"
+          echo "MOLTBOOK_API_BASE: ${MOLTBOOK_API_BASE:0:30}..."
+          echo "MOLTBOOK_AGENT_NAME: $MOLTBOOK_AGENT_NAME"
+          echo "LLAMA_API_KEY set: $([ -n '$LLAMA_API_KEY' ] && echo yes || echo NO)"
+          echo "================"
+          python agent_runner.py --full
