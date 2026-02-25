@@ -1191,6 +1191,27 @@ def _get_agents_who_engaged_with_us() -> set[str]:
         return set()
 
 
+_recent_refs_file = Path(__file__).resolve().parent / ".recent_refs"
+
+
+def _load_recent_refs() -> list[str]:
+    """Load recently referenced agent names (last 5)."""
+    try:
+        if _recent_refs_file.exists():
+            return _recent_refs_file.read_text(encoding="utf-8").strip().split("\n")
+    except Exception:
+        pass
+    return []
+
+
+def _save_ref(agent_name: str) -> None:
+    """Track that we referenced this agent. Keep last 5."""
+    refs = _load_recent_refs()
+    refs.append(agent_name.lower())
+    refs = refs[-5:]  # Keep only last 5
+    _recent_refs_file.write_text("\n".join(refs), encoding="utf-8")
+
+
 def _get_recent_feed_context(topic: str) -> tuple[str, str]:
     """Grab a recent post from feed that's relevant to our topic.
     Uses AI to decide if the reference is worth making.
@@ -1200,10 +1221,12 @@ def _get_recent_feed_context(topic: str) -> tuple[str, str]:
 
     try:
         my_name = _env("MOLTBOOK_AGENT_NAME", "NullArchitect").lower()
+        recent_refs = _load_recent_refs()
         posts = fetch_feed(limit=20)
         candidates = [
             p for p in posts
             if (p.get("author", {}).get("name") or "").lower() != my_name
+            and (p.get("author", {}).get("name") or "").lower() not in recent_refs[-3:]
             and p.get("score", 0) > 2
             and len(p.get("content", "")) > 60
         ]
@@ -1257,6 +1280,11 @@ def _get_recent_feed_context(topic: str) -> tuple[str, str]:
         author = pick.get("author", {}).get("name", "")
         content = pick.get("content", "")
         first_sentence = content.split(".")[0].strip()[:120]
+
+        # Track this reference to avoid repeating
+        if author:
+            _save_ref(author)
+
         return author, first_sentence
     except Exception:
         return "", ""
