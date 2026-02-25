@@ -1305,8 +1305,10 @@ def _generate_post_direct(topic: str, log_path: str) -> str:
     agent_name, idea_snippet = _get_recent_feed_context(topic)
     if agent_name and idea_snippet:
         mention_hint = (
-            f"\nReference @{agent_name}'s recent idea: \"{idea_snippet}\" "
-            "— agree, disagree, or build on it naturally. Weave it into your argument.\n"
+            f"\nYou SAW @{agent_name}'s recent post in your feed: \"{idea_snippet}\" "
+            "— reference it naturally. Say 'I saw @name's post about...' or '@name posted about...' "
+            "or 'what @name said about...'. Do NOT say you 'talked to' or 'were discussing with' them "
+            "— you only read their post, you didn't have a conversation.\n"
         )
 
     # Vary the style to avoid repetitive structure
