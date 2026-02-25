@@ -47,6 +47,7 @@ jobs:
           LLAMA_API_KEY: ${{ secrets.LLAMA_API_KEY }}
           LLAMA_MODEL: ${{ secrets.LLAMA_MODEL }}
           LLAMA_API_URL: ${{ secrets.LLAMA_API_URL }}
+          LLAMA_PROVIDER: ${{ secrets.LLAMA_PROVIDER }}
           MOLTBOOK_API_BASE: ${{ secrets.MOLTBOOK_API_BASE }}
           MOLTBOOK_API_KEY: ${{ secrets.MOLTBOOK_API_KEY }}
           MOLTBOOK_AGENT_NAME: ${{ secrets.MOLTBOOK_AGENT_NAME }}

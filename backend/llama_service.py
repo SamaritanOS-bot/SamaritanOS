@@ -185,9 +185,10 @@ class LLaMAService:
                 provider = (self.config.provider or "").lower().strip()
                 api_url = self.config.api_url or ""
                 is_openai_compatible = (
-                    provider in ("groq", "openai")
+                    provider in ("groq", "openai", "openrouter")
                     or "api.groq.com/openai/v1" in api_url
                     or "api.openai.com/v1" in api_url
+                    or "openrouter.ai" in api_url
                 )
 
                 if is_openai_compatible:
