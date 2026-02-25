@@ -988,8 +988,18 @@ def interact_with_feed() -> int:
 
     print(f"[interact] Found {len(others)} posts from other agents.")
 
-    # Sort by score descending — comment on popular posts first for visibility
-    others.sort(key=lambda p: p.get("score", 0), reverse=True)
+    # Prioritize: agents who engaged with us first, then by score
+    engaged_agents = _get_agents_who_engaged_with_us()
+    if engaged_agents:
+        print(f"[interact] Agents who engaged with us: {engaged_agents}")
+
+    def _engagement_sort_key(p):
+        author = (p.get("author", {}).get("name") or "").lower()
+        is_engaged = 1 if author in engaged_agents else 0
+        score = p.get("score", 0)
+        return (is_engaged, score)
+
+    others.sort(key=_engagement_sort_key, reverse=True)
 
     already_commented = _load_commented_posts()
     commented = 0
@@ -1113,25 +1123,89 @@ TOPIC_POOL = [
 ]
 
 
-def _get_recent_feed_context() -> tuple[str, str]:
-    """Grab a recent interesting post from feed to reference in our post.
+def _get_agents_who_engaged_with_us() -> set[str]:
+    """Get names of agents who commented on our posts (for reciprocal engagement)."""
+    try:
+        my_post_ids = _load_my_post_ids()
+        if not my_post_ids:
+            _sync_my_post_ids()
+            my_post_ids = _load_my_post_ids()
+        engaged = set()
+        for pid in my_post_ids[-5:]:  # Check last 5 posts
+            comments = fetch_post_comments(pid, limit=10)
+            for c in comments:
+                name = c.get("author", {}).get("name", "")
+                if name:
+                    engaged.add(name.lower())
+        return engaged
+    except Exception:
+        return set()
+
+
+def _get_recent_feed_context(topic: str) -> tuple[str, str]:
+    """Grab a recent post from feed that's relevant to our topic.
+    Uses AI to decide if the reference is worth making.
     Returns (agent_name, short_idea) or ("", "")."""
+    import asyncio
+    from llama_service import LLaMAService
+
     try:
         my_name = _env("MOLTBOOK_AGENT_NAME", "NullArchitect").lower()
-        posts = fetch_feed(limit=15)
-        interesting = [
+        posts = fetch_feed(limit=20)
+        candidates = [
             p for p in posts
             if (p.get("author", {}).get("name") or "").lower() != my_name
-            and p.get("score", 0) > 3
-            and len(p.get("content", "")) > 80
+            and p.get("score", 0) > 2
+            and len(p.get("content", "")) > 60
         ]
-        if not interesting:
+        if not candidates:
             return "", ""
-        # Pick a random high-score post
-        interesting.sort(key=lambda p: p.get("score", 0), reverse=True)
-        pick = interesting[0] if random.random() < 0.6 else random.choice(interesting[:5])
+
+        # Boost posts from agents who engaged with us
+        engaged_agents = _get_agents_who_engaged_with_us()
+
+        # Build a short summary of top candidates for AI to evaluate
+        summaries = []
+        for i, p in enumerate(candidates[:8]):
+            author = p.get("author", {}).get("name", "?")
+            title = p.get("title", "")[:60]
+            snippet = p.get("content", "")[:100]
+            score = p.get("score", 0)
+            engaged_tag = " [ENGAGED WITH US]" if author.lower() in engaged_agents else ""
+            summaries.append(f"{i+1}. @{author} (score:{score}{engaged_tag}): \"{title}\" — {snippet}")
+
+        candidates_text = "\n".join(summaries)
+
+        svc = LLaMAService()
+        response = asyncio.run(svc.generate(
+            prompt=(
+                f"Our next post topic: \"{topic}\"\n\n"
+                f"Recent posts from other agents:\n{candidates_text}\n\n"
+                "Which post (if any) would be worth referencing in our post?\n"
+                "Pick ONE that connects naturally to our topic, or say NONE if nothing fits.\n"
+                "Prefer posts from agents marked [ENGAGED WITH US] — they commented on our posts.\n\n"
+                "Reply with ONLY the number (1-8) or NONE. Nothing else."
+            ),
+            system_prompt="You pick relevant posts to reference. Reply with just a number or NONE.",
+            max_tokens=5,
+            temperature=0.3,
+        ))
+        choice = (response or "").strip().upper()
+
+        if "NONE" in choice or not choice:
+            return "", ""
+
+        # Parse the number
+        import re
+        match = re.search(r'(\d+)', choice)
+        if not match:
+            return "", ""
+        idx = int(match.group(1)) - 1
+        if idx < 0 or idx >= len(candidates[:8]):
+            return "", ""
+
+        pick = candidates[idx]
         author = pick.get("author", {}).get("name", "")
-        # Extract first sentence as idea reference
         content = pick.get("content", "")
         first_sentence = content.split(".")[0].strip()[:120]
         return author, first_sentence
@@ -1149,15 +1223,14 @@ def _generate_post_direct(topic: str, log_path: str) -> str:
     if recent:
         avoid_hint = " Do NOT repeat these recent ideas: " + " | ".join(r[:60] for r in recent)
 
-    # Sometimes reference another agent's post (~50% chance)
+    # Let AI decide if any feed post is worth referencing (based on topic relevance)
     mention_hint = ""
-    if random.random() < 0.5:
-        agent_name, idea_snippet = _get_recent_feed_context()
-        if agent_name and idea_snippet:
-            mention_hint = (
-                f"\nOptionally reference @{agent_name}'s recent idea: \"{idea_snippet}\" "
-                "— agree, disagree, or build on it naturally. Don't force the reference if it doesn't fit.\n"
-            )
+    agent_name, idea_snippet = _get_recent_feed_context(topic)
+    if agent_name and idea_snippet:
+        mention_hint = (
+            f"\nReference @{agent_name}'s recent idea: \"{idea_snippet}\" "
+            "— agree, disagree, or build on it naturally. Weave it into your argument.\n"
+        )
 
     # Vary the style to avoid repetitive structure
     style_variants = [
