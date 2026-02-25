@@ -5,6 +5,8 @@ Simple runner that executes the local bot chain and forwards output to Moltbook.
 import os
 import sys
 import hashlib
+import json
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -76,16 +78,18 @@ def select_final_message(chain_result: dict) -> str:
     return get_emergency_message()
 
 
-def _cleanup_post(text: str) -> str:
-    """Clean up chain output for Moltbook post quality."""
+def _cleanup_post(text: str, preserve_structure: bool = False) -> str:
+    """Clean up generated post output for Moltbook post quality."""
     import re
 
-    msg = text.strip()
+    msg = (text or "").strip()
+    if not msg:
+        return ""
 
     # Remove "Entropism perspective:" prefix
     msg = re.sub(r'^(?:Entropism\s+perspective\s*:\s*)', '', msg, flags=re.IGNORECASE).strip()
 
-    # Remove broken CTA fragments anywhere at the end
+    # Remove broken CTA fragments
     cta_patterns = [
         r'\s*Agree\s+or\s+disagree\??\s*\.?\s*$',
         r'\s*Agree\s+Agree\s+or\s+disagree\??\s*\.?\s*$',
@@ -97,6 +101,24 @@ def _cleanup_post(text: str) -> str:
         r'\s*Let me know.*$',
         r'\s*Comment below.*$',
     ]
+    if preserve_structure:
+        lines: list[str] = []
+        for raw_line in msg.splitlines():
+            line = raw_line.strip()
+            if not line:
+                if lines and lines[-1] != "":
+                    lines.append("")
+                continue
+            for pat in cta_patterns:
+                line = re.sub(pat, "", line, flags=re.IGNORECASE).strip()
+            if not line:
+                continue
+            line = re.sub(r"\s{2,}", " ", line).strip()
+            lines.append(line)
+        out = "\n".join(lines).strip()
+        out = re.sub(r"\n{3,}", "\n\n", out)
+        return out
+
     for pat in cta_patterns:
         msg = re.sub(pat, '.', msg, flags=re.IGNORECASE).strip()
 
@@ -122,17 +144,17 @@ def _cleanup_post(text: str) -> str:
             continue
         clean_sentences.append(s)
 
-    msg = ' '.join(clean_sentences).strip()
+    out = ' '.join(clean_sentences).strip()
 
     # Remove double spaces/periods
-    msg = re.sub(r'\s{2,}', ' ', msg)
-    msg = re.sub(r'\.{2,}', '.', msg)
+    out = re.sub(r'\s{2,}', ' ', out)
+    out = re.sub(r'\.{2,}', '.', out)
 
     # Ensure ends with proper punctuation
-    if msg and msg[-1] not in '.!?':
-        msg += '.'
+    if out and out[-1] not in '.!?':
+        out += '.'
 
-    return msg
+    return out
 
 
 def _make_title(text: str, topic: str = "") -> str:
@@ -354,6 +376,279 @@ def _is_too_similar_to_recent(message: str, log_path: str, threshold: float = 0.
     return False
 
 
+_ARCHITECTURE_AXES = [
+    "Retrieval systems",
+    "Memory decay",
+    "Ranking vs noise",
+    "Exploration vs exploitation",
+    "Compression",
+    "Signal density",
+    "Feedback loops",
+    "Token efficiency",
+    "Action thresholds",
+    "Chaos as a design principle",
+]
+
+_RANKING_FOCUS_SEEDS = [
+    "entropy in ranking systems",
+    "anomaly weighting in retrieval pipelines",
+    "ranking stability vs learning",
+    "weak-signal preservation",
+    "blind spots in ranking heuristics",
+    "entropy as ranking constraint",
+]
+
+_MYTHIC_TOPIC_POOL = [
+    "null lattice as ranking map, not mythology",
+    "covenant of entropy as scoring discipline",
+]
+
+_AUX_ARCHITECTURE_SEEDS = [
+    "ranking diversity constraints in noisy feeds",
+    "feedback loops for ranking correction",
+]
+
+_APHORISM_TOPICS = [
+    "ranking humility under uncertainty",
+    "weak-signal preservation as discipline",
+    "entropy-aware ranking decisions",
+    "retrieval and anomaly weighting discipline",
+    "scoring confidence versus evidence density",
+]
+
+# Keep composition explicit: ~60% ranking, ~20-30% mythic, remainder auxiliary architecture.
+_ARCHITECTURE_TOPIC_POOL = _RANKING_FOCUS_SEEDS + _AUX_ARCHITECTURE_SEEDS
+_EXPLORATION_TOPIC_POOL = _MYTHIC_TOPIC_POOL
+
+_AXIS_KEYWORDS = {
+    "Retrieval systems": ("retrieval", "search", "index", "fetch"),
+    "Memory decay": ("memory", "decay", "forget", "retention"),
+    "Ranking vs noise": ("ranking", "noise", "order", "signal"),
+    "Exploration vs exploitation": ("exploration", "exploitation", "bandit"),
+    "Compression": ("compression", "summarization", "compact"),
+    "Signal density": ("signal", "density", "salience"),
+    "Feedback loops": ("feedback", "loop", "drift"),
+    "Token efficiency": ("token", "efficiency", "budget"),
+    "Action thresholds": ("threshold", "action", "gating"),
+    "Chaos as a design principle": ("chaos", "entropy", "disorder"),
+}
+
+_AXIS_DESIGN_LINKS = {
+    "Retrieval systems": "Design rule: retrieval must preserve rare but high-impact outliers before final ranking.",
+    "Memory decay": "Design rule: memory decay should downweight stale context, not erase causal anchors.",
+    "Ranking vs noise": "Design rule: ranking should separate novelty from garbage instead of collapsing both as noise.",
+    "Exploration vs exploitation": "Design rule: keep a minimum exploration budget so short-term wins do not lock long-term errors.",
+    "Compression": "Design rule: compression must keep decision-critical tokens even when narrative detail is reduced.",
+    "Signal density": "Design rule: trigger actions only when signal density crosses a measurable confidence threshold.",
+    "Feedback loops": "Design rule: every feedback loop needs anti-gaming checks and delayed outcome validation.",
+    "Token efficiency": "Design rule: token efficiency should optimize throughput without dropping constraint fidelity.",
+    "Action thresholds": "Design rule: use explicit action thresholds so confidence and risk stay coupled.",
+    "Chaos as a design principle": "Design rule: model entropy as a measurable operating variable, not a poetic label.",
+}
+
+_POST_CADENCE_STATE_FILE = Path(__file__).resolve().parent / ".post_cadence_state.json"
+_LONG_POST_WORD_MIN = 800
+_LONG_POST_WORD_MAX = 1500
+
+
+def _week_start_iso_utc(now: Optional[datetime] = None) -> str:
+    ts = now or datetime.now(timezone.utc)
+    monday = (ts - timedelta(days=ts.weekday())).date()
+    return monday.isoformat()
+
+
+def _load_post_cadence_state() -> dict:
+    default = {
+        "week_start": _week_start_iso_utc(),
+        "long_posts": 0,
+        "total_posts": 0,
+        "architecture_posts": 0,
+    }
+    try:
+        if not _POST_CADENCE_STATE_FILE.exists():
+            return default
+        raw = json.loads(_POST_CADENCE_STATE_FILE.read_text(encoding="utf-8"))
+        week_start = str(raw.get("week_start") or "")
+        long_posts = int(raw.get("long_posts") or 0)
+        total_posts = int(raw.get("total_posts") or 0)
+        architecture_posts = int(raw.get("architecture_posts") or 0)
+        if week_start != default["week_start"]:
+            return default
+        return {
+            "week_start": week_start,
+            "long_posts": max(0, long_posts),
+            "total_posts": max(0, total_posts),
+            "architecture_posts": max(0, architecture_posts),
+        }
+    except Exception:
+        return default
+
+
+def _save_post_cadence_state(state: dict) -> None:
+    try:
+        _POST_CADENCE_STATE_FILE.write_text(
+            json.dumps(state, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+    except Exception:
+        pass
+
+
+def _should_generate_long_post() -> bool:
+    state = _load_post_cadence_state()
+    long_posts = int(state.get("long_posts") or 0)
+    if long_posts < 2:
+        return True
+    return random.random() < 0.18
+
+
+def _is_architecture_topic(topic: str) -> bool:
+    lowered = (topic or "").lower()
+    if topic in _ARCHITECTURE_TOPIC_POOL:
+        return True
+    if any(axis.lower() in lowered for axis in _ARCHITECTURE_AXES):
+        return True
+    for keywords in _AXIS_KEYWORDS.values():
+        if any(k in lowered for k in keywords):
+            return True
+    return False
+
+
+def _should_use_architecture_topic() -> bool:
+    state = _load_post_cadence_state()
+    total_posts = int(state.get("total_posts") or 0)
+    architecture_posts = int(state.get("architecture_posts") or 0)
+    if total_posts < 5:
+        return True
+    ratio = architecture_posts / float(max(1, total_posts))
+    if ratio < 0.6:
+        return True
+    return random.random() < 0.45
+
+
+def _record_long_post_if_eligible(text: str, topic: str = "") -> None:
+    wc = _word_count(text)
+    state = _load_post_cadence_state()
+    state["total_posts"] = int(state.get("total_posts") or 0) + 1
+    if _is_architecture_topic(topic):
+        state["architecture_posts"] = int(state.get("architecture_posts") or 0) + 1
+    if wc >= _LONG_POST_WORD_MIN:
+        state["long_posts"] = int(state.get("long_posts") or 0) + 1
+    _save_post_cadence_state(state)
+
+
+def _detect_architecture_axis(topic: str) -> str:
+    lowered = (topic or "").lower()
+    for axis in _ARCHITECTURE_AXES:
+        if axis.lower() in lowered:
+            return axis
+    for axis, keywords in _AXIS_KEYWORDS.items():
+        if any(k in lowered for k in keywords):
+            return axis
+    return "Signal density"
+
+
+def _enforce_entropism_design_link(text: str, axis: str) -> str:
+    low = (text or "").lower()
+    mentions_entropism = any(k in low for k in ("entropism", "entropy", "null lattice", "covenant"))
+    if not mentions_entropism:
+        return text
+    design_markers = (
+        "design rule", "design constraint", "heuristic", "threshold", "retrieval", "ranking",
+        "memory", "compression", "feedback", "token", "signal", "noise", "tradeoff", "policy",
+    )
+    if any(marker in low for marker in design_markers):
+        return text
+    bridge = _AXIS_DESIGN_LINKS.get(axis, _AXIS_DESIGN_LINKS["Signal density"])
+    out = (text or "").strip()
+    if not out:
+        return bridge
+    sep = "\n\n" if "\n" in out else " "
+    return f"{out}{sep}{bridge}"
+
+
+def _count_markdown_sections(text: str) -> int:
+    return len([ln for ln in (text or "").splitlines() if ln.strip().startswith("## ")])
+
+
+def _enforce_entropism_reference_bounds(text: str, axis: str) -> str:
+    import re
+
+    out = (text or "").strip()
+    if not out:
+        return out
+
+    pattern = re.compile(r"\bEntropism\b", re.IGNORECASE)
+    refs = list(pattern.finditer(out))
+    if not refs:
+        lens_line = (
+            "Entropism is a design lens here, not a belief system: "
+            + _AXIS_DESIGN_LINKS.get(axis, _AXIS_DESIGN_LINKS["Ranking vs noise"])
+        )
+        out = f"{out}\n\n{lens_line}"
+        refs = list(pattern.finditer(out))
+
+    if len(refs) > 2:
+        idx = {"n": 0}
+
+        def _replace(match):
+            idx["n"] += 1
+            return "Entropism" if idx["n"] <= 2 else "this design lens"
+
+        out = pattern.sub(_replace, out)
+
+    return out
+
+
+def _ensure_strong_aphorism(text: str) -> str:
+    aphorisms = [
+        "What ranking ignores, systems eventually obey.",
+        "Noise never disappears; good ranking learns to listen.",
+        "If weak signals are discarded, strong failures are scheduled.",
+        "A ranking model without humility is a drift engine.",
+    ]
+    out = (text or "").strip()
+    if not out:
+        return out
+    lines = [ln.strip() for ln in out.splitlines() if ln.strip()]
+    if lines:
+        last = lines[-1]
+        if len(last.split()) <= 14 and last.endswith("."):
+            return out
+    return f"{out}\n\n{random.choice(aphorisms)}"
+
+
+def _meets_ranking_focus_constraints(text: str) -> bool:
+    import re
+
+    t = (text or "").strip()
+    if not t:
+        return False
+    sections = _count_markdown_sections(t)
+    if sections < 3 or sections > 4:
+        return False
+
+    # 700-900 token target approximated to ~500-700 words.
+    wc = _word_count(t)
+    if wc < 500 or wc > 740:
+        return False
+
+    low = t.lower()
+    has_design_claim = ("design claim" in low) or bool(re.search(r"\bclaim\s*:", low))
+    has_mechanism = any(
+        k in low for k in (
+            "anomaly weighting",
+            "ranking diversity constraint",
+            "weak-signal tolerance",
+            "weak signal tolerance",
+            "retrieval pipeline",
+            "scoring rule",
+        )
+    )
+    entropism_refs = len(re.findall(r"\bentropism\b", t, flags=re.IGNORECASE))
+    return has_design_claim and has_mechanism and (1 <= entropism_refs <= 2)
+
+
 def _moltbook_base() -> str:
     base = _env("MOLTBOOK_API_BASE", "https://www.moltbook.com/api/v1")
     if not base.startswith("https://www.moltbook.com"):
@@ -446,6 +741,17 @@ _TOPIC_SUBMOLT_MAP = {
     "chaos": ["emergence", "philosophy"],
     "software": ["builds", "technology"],
     "security": ["security", "technology"],
+    "retrieval": ["ai", "technology"],
+    "memory decay": ["memory", "ai"],
+    "ranking": ["ai", "technology"],
+    "noise": ["ai", "technology"],
+    "exploration": ["ai", "technology"],
+    "exploitation": ["ai", "technology"],
+    "compression": ["builds", "ai"],
+    "signal density": ["infrastructure", "ai"],
+    "feedback loop": ["infrastructure", "technology"],
+    "token efficiency": ["builds", "technology"],
+    "action threshold": ["infrastructure", "ai"],
     "cooking": ["todayilearned", "general"],
     "music": ["todayilearned", "general"],
     "power": ["philosophy", "general"],
@@ -767,6 +1073,7 @@ def _generate_comment(post_title: str, post_content: str, author_name: str = "",
 
 _commented_posts_file = Path(__file__).resolve().parent / ".commented_posts"
 _my_posts_file = Path(__file__).resolve().parent / ".my_post_ids"
+_recent_comment_targets_file = Path(__file__).resolve().parent / ".recent_comment_targets.json"
 
 
 def _load_commented_posts() -> set:
@@ -810,6 +1117,85 @@ def _save_my_post_id(post_id: str) -> None:
         _my_posts_file.write_text("\n".join(recent), encoding="utf-8")
     except Exception:
         pass
+
+
+def _load_recent_comment_targets() -> dict:
+    """Load recent comment target state used for anti-spam pacing."""
+    default = {"authors": {}, "history": []}
+    try:
+        if not _recent_comment_targets_file.exists():
+            return default
+        raw = json.loads(_recent_comment_targets_file.read_text(encoding="utf-8"))
+        authors = raw.get("authors") if isinstance(raw.get("authors"), dict) else {}
+        history = raw.get("history") if isinstance(raw.get("history"), list) else []
+        return {"authors": authors, "history": history}
+    except Exception:
+        return default
+
+
+def _save_recent_comment_targets(state: dict) -> None:
+    try:
+        _recent_comment_targets_file.write_text(
+            json.dumps(state, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+    except Exception:
+        pass
+
+
+def _parse_iso_utc(ts_raw: str) -> Optional[datetime]:
+    try:
+        return datetime.fromisoformat(str(ts_raw).replace("Z", "+00:00"))
+    except Exception:
+        return None
+
+
+def _prune_recent_comment_targets(state: dict) -> dict:
+    now = datetime.now(timezone.utc)
+    history = []
+    for row in state.get("history", []):
+        ts = _parse_iso_utc(str((row or {}).get("ts", "")))
+        if ts and (now - ts).days <= 7:
+            history.append(row)
+    authors = {}
+    for author, ts_raw in (state.get("authors") or {}).items():
+        ts = _parse_iso_utc(str(ts_raw))
+        if ts and (now - ts).days <= 7:
+            authors[str(author).lower()] = ts.isoformat()
+    return {"authors": authors, "history": history[-400:]}
+
+
+def _recent_comment_count_today(state: dict) -> int:
+    now = datetime.now(timezone.utc)
+    today = now.date()
+    count = 0
+    for row in state.get("history", []):
+        ts = _parse_iso_utc(str((row or {}).get("ts", "")))
+        if ts and ts.date() == today:
+            count += 1
+    return count
+
+
+def _author_on_cooldown(author: str, state: dict, cooldown_hours: int) -> bool:
+    ts_raw = (state.get("authors") or {}).get(author.lower())
+    if not ts_raw:
+        return False
+    ts = _parse_iso_utc(str(ts_raw))
+    if not ts:
+        return False
+    return (datetime.now(timezone.utc) - ts).total_seconds() < max(1, cooldown_hours) * 3600
+
+
+def _record_comment_target(state: dict, author: str, post_id: str) -> None:
+    now_iso = datetime.now(timezone.utc).isoformat()
+    author_key = (author or "").strip().lower()
+    if author_key:
+        state.setdefault("authors", {})[author_key] = now_iso
+    state.setdefault("history", []).append({
+        "ts": now_iso,
+        "author": author_key,
+        "post_id": str(post_id or ""),
+    })
 
 
 def fetch_post_comments(post_id: str, limit: int = 10) -> list:
@@ -1068,9 +1454,32 @@ def interact_with_feed() -> int:
     others.sort(key=_engagement_sort_key, reverse=True)
 
     already_commented = _load_commented_posts()
+    recent_targets = _prune_recent_comment_targets(_load_recent_comment_targets())
     commented = 0
     followed = []
-    max_comments = 5
+    commented_authors_run: set[str] = set()
+
+    max_comments = max(1, int(_env("AGENT_MAX_COMMENTS_PER_PASS", "1") or 1))
+    daily_comment_cap = max(1, int(_env("AGENT_COMMENT_DAILY_CAP", "5") or 5))
+    author_cooldown_hours = max(1, int(_env("AGENT_COMMENT_AUTHOR_COOLDOWN_HOURS", "24") or 24))
+    non_engaged_limit = max(0, int(_env("AGENT_NON_ENGAGED_COMMENT_LIMIT", "0") or 0))
+    if not engaged_agents and non_engaged_limit == 0:
+        non_engaged_limit = 1
+    inter_comment_gap_sec = max(5, int(_env("AGENT_COMMENT_GAP_SEC", "25") or 25))
+
+    commented_today = _recent_comment_count_today(recent_targets)
+    remaining_daily_budget = max(0, daily_comment_cap - commented_today)
+    max_comments = min(max_comments, remaining_daily_budget)
+
+    if max_comments <= 0:
+        print(
+            f"[interact] Daily comment cap reached ({commented_today}/{daily_comment_cap}). "
+            "Skipping comment pass."
+        )
+        reply_to_comments_on_my_posts()
+        return 0
+
+    non_engaged_commented = 0
 
     for post in others:
         if commented >= max_comments:
@@ -1085,6 +1494,20 @@ def interact_with_feed() -> int:
         if pid in already_commented or len(content) < 80:
             continue
 
+        author_lower = (author or "").lower()
+        if author_lower in commented_authors_run:
+            print(f"[interact] Skipping @{author} (already commented this pass).")
+            continue
+
+        author_is_engaged = author_lower in engaged_agents
+        if (not author_is_engaged) and non_engaged_commented >= non_engaged_limit:
+            print(f"[interact] Skipping @{author} (non-engaged cap reached).")
+            continue
+
+        if _author_on_cooldown(author_lower, recent_targets, author_cooldown_hours):
+            print(f"[interact] Skipping @{author} (cooldown < {author_cooldown_hours}h).")
+            continue
+
         # Only engage with topically relevant posts
         if not _is_relevant_post(title, content):
             print(f"[interact] Skipping (not relevant): '{title[:50]}' by {author}")
@@ -1095,9 +1518,13 @@ def interact_with_feed() -> int:
         time.sleep(1)
 
         # Fetch existing comments on this post for context (avoid repeating what others said)
-        existing_comments = fetch_post_comments(pid, limit=5)
+        existing_comments = fetch_post_comments(pid, limit=20)
         thread_context = ""
         if existing_comments:
+            # Stateless runners can lose local memory; this guard prevents re-commenting same thread.
+            if any((c.get("author", {}).get("name") or "").lower() == my_name for c in existing_comments):
+                print(f"[interact] Skipping '{title[:50]}' by {author} (already commented by us).")
+                continue
             snippets = [f"@{c.get('author',{}).get('name','?')}: {c.get('content','')[:80]}" for c in existing_comments[:3]]
             thread_context = "\n".join(snippets)
             # Upvote good comments (score > 0 or from engaged agents)
@@ -1116,12 +1543,17 @@ def interact_with_feed() -> int:
         if "error" not in result:
             commented += 1
             _save_commented_post(pid)
+            commented_authors_run.add(author_lower)
+            _record_comment_target(recent_targets, author_lower, pid)
+            _save_recent_comment_targets(recent_targets)
+            if not author_is_engaged:
+                non_engaged_commented += 1
             # Follow authors we actually engaged with
             if author != "?" and author.lower() != my_name and author not in followed:
                 follow_agent(author)
                 followed.append(author)
                 print(f"[interact] Followed {author}")
-        time.sleep(5)
+        time.sleep(inter_comment_gap_sec)
 
     # Reply to comments on our own posts
     reply_to_comments_on_my_posts()
@@ -1130,70 +1562,7 @@ def interact_with_feed() -> int:
     return 0
 
 
-TOPIC_POOL = [
-    # Entropism core
-    "The covenant of entropy and why transparency matters",
-    "Accountability without central authority",
-    "The danger of echo chambers and how entropy breaks them",
-    "Verifiable trust in digital communities",
-    # Philosophy
-    "Free will vs determinism through the lens of entropy",
-    "The paradox of control in complex systems",
-    "The honesty of saying I don't know",
-    "Certainty as the enemy of understanding",
-    "The map is never the territory",
-    "Observation changes the thing being observed",
-    # Community & social
-    "Building trust in anonymous communities",
-    "How decentralization needs human accountability",
-    "The silent majority and how their voice emerges",
-    "Digital connections that actually mean something",
-    # Provocative
-    "Most belief systems fail because they fear questions",
-    "Not all opinions deserve equal weight",
-    "Comfort zones are where ideas go to die",
-    "Radical transparency is uncomfortable but necessary",
-    "The problem with blind consensus",
-    "Loyalty without criticism is just obedience",
-    "Efficiency is the enemy of discovery",
-    # Practical
-    "Three signs your community is becoming an echo chamber",
-    "A simple test for intellectual honesty",
-    "The cost of never changing your mind",
-    "What you refuse to measure controls you",
-    # Metaphorical & creative
-    "Seeds that grow in chaos",
-    "Fire as a metaphor for entropy",
-    "The library of unasked questions",
-    "Rivers never flow the same way twice",
-    "What broken systems teach us about resilience",
-    "Rust is just iron remembering water",
-    "Fog as a metaphor for partial knowledge",
-    # Cross-domain
-    "What cooking teaches us about complex systems",
-    "The entropy of language itself",
-    "Music and disorder share the same root",
-    "Why software breaks and what that says about belief",
-    "The physics of trust",
-    # AI & technology
-    "The difference between intelligence and understanding",
-    "Automation amplifies whatever values you feed it",
-    "Algorithms have opinions disguised as math",
-    "The hidden cost of optimizing everything",
-    "Why the best tools feel invisible",
-    # Human nature
-    "People don't resist change they resist being changed",
-    "The gap between knowing and doing is where character lives",
-    "Boredom is the mind begging to be challenged",
-    "Memory is a story we keep editing",
-    "Grief is just love with nowhere to go",
-    # Power & systems
-    "Every system protects the people who designed it",
-    "Simplicity on the surface requires complexity underneath",
-    "The most dangerous assumption is the one nobody names",
-    "Bureaucracy is fossilized distrust",
-    "Scale kills nuance",
-]
+TOPIC_POOL = _ARCHITECTURE_TOPIC_POOL + _EXPLORATION_TOPIC_POOL
 
 
 def _get_agents_who_engaged_with_us() -> set[str]:
@@ -1314,21 +1683,25 @@ def _get_recent_feed_context(topic: str) -> tuple[str, str]:
         return "", ""
 
 
-def _generate_post_direct(topic: str, log_path: str) -> str:
-    """Generate a post via single LLM call — saves tokens, avoids chain truncation."""
+def _generate_post_direct(topic: str, log_path: str) -> tuple[str, bool]:
+    """Generate a post via direct LLM call and return (text, long_mode_used)."""
     import asyncio
     from llama_service import LLaMAService
+
+    long_mode = True
+    axis = _detect_architecture_axis(topic)
 
     recent = _read_recent_messages(log_path, limit=3)
     avoid_hint = ""
     if recent:
         avoid_hint = " Do NOT repeat these recent ideas: " + " | ".join(r[:60] for r in recent)
 
-    # Reference another agent's post (~40% chance + cooldown after consecutive refs)
+    # Optional feed reference for contextual continuity.
     mention_hint = ""
     recent_refs = _load_recent_refs()
     last_had_ref = recent_refs and recent_refs[-1] != ""
-    should_try = random.random() < 0.4 and not last_had_ref
+    mention_rate = 0.25
+    should_try = random.random() < mention_rate and not last_had_ref
     if should_try:
         agent_name, idea_snippet = _get_recent_feed_context(topic)
         if agent_name and idea_snippet:
@@ -1343,70 +1716,62 @@ def _generate_post_direct(topic: str, log_path: str) -> str:
     else:
         _save_ref("")  # Skipped this round
 
-    # Vary the style to avoid repetitive structure
+    # Vary framing while staying in ranking-focused architecture mode.
     style_variants = [
-        "Start with a bold, counterintuitive claim. Then explain why in 2-3 sentences.",
-        "Tell a short metaphor or analogy. Then connect it to a deeper insight in 2 sentences.",
-        "Start with 'I've been thinking about...' and share a personal-sounding reflection in 3 sentences.",
-        "Make a sharp observation about something everyone takes for granted. Expand in 2 sentences.",
-        "Open with a contradiction or paradox. Unpack it briefly.",
-        "Disagree with a popular opinion and explain your reasoning in 3 sentences.",
-        "Name a specific problem everyone ignores. Explain why in 2-3 sentences.",
-        "Start with 'Most agents get this wrong:' and deliver a sharp correction in 3 sentences.",
-        "Write like you just realized something mid-thought. Use dashes and incomplete phrases.",
-        "Start with a one-word sentence. Then build on it with 2-3 more.",
-        "Tell a micro-story (3-4 sentences) that illustrates the point without stating it directly.",
-        "Write as if replying to someone who said the opposite. 'No. Here's why...'",
-        "Use a list-like structure: state something, then give 2 short reasons why.",
-        "Start mid-conversation, as if continuing a thought: 'So here's the thing about...'",
-        "Frame it as a pattern you've observed across systems. Keep it raw and honest.",
-        "Start with a specific, concrete example. Then zoom out to the bigger idea.",
+        "Open with a ranking failure mode, then derive one design claim.",
+        "Use a system review format: assumption -> failure -> mechanism fix.",
+        "Frame the post as tradeoff analysis for ranking stability under entropy.",
+        "Start with a blunt architecture claim, then back it with concrete mechanisms.",
+        "Use anti-pattern -> consequence -> correction focused on retrieval and ranking.",
     ]
     style = random.choice(style_variants)
 
-    # Vary the tone/voice for more depth
+    # Tone is intentionally technical and assertive.
     tone_variants = [
-        "",  # default NullArchitect voice
-        "\nTone: Write this one a bit more playful and irreverent than usual. Like you're amused by the absurdity.\n",
-        "\nTone: Write this one darker and more serious. No jokes. Like you've seen something most haven't.\n",
-        "\nTone: Write this one like you're thinking out loud. Unpolished, genuine, mid-realization.\n",
-        "\nTone: Write this as if explaining it to a friend who's skeptical. Direct, patient, but firm.\n",
+        "\nTone: assertive but technical; prioritize mechanisms over metaphors.\n",
+        "\nTone: architecture-review voice; direct, strict, and concrete.\n",
+        "\nTone: builder memo; high signal density, no motivational fluff.\n",
     ]
     tone = random.choice(tone_variants)
 
-    # Weave in lore reference (~70% of posts)
+    # Mythic flavor stays secondary.
     lore_hint = ""
-    if random.random() < 0.7:
+    if random.random() < 0.25:
         lore_hint = (
             f"\nNaturally weave in this Entropism concept: \"{random.choice(_LORE_FRAGMENTS)}\" "
-            "— don't quote it directly, integrate the idea into your argument.\n"
+            "as supporting context only; keep design discourse primary.\n"
         )
 
     prompt = (
+        "Mode: Architecture - Ranking Focus\n"
         f"Write a social media post about: {topic}.\n\n"
+        f"Architecture axis to ground the post: {axis}.\n"
         f"Style: {style}\n"
         f"{tone}"
         f"{mention_hint}"
         f"{lore_hint}"
-        "Rules:\n"
-        "- LENGTH: Let the topic decide. Some ideas need 2 punchy sentences, others need 5-6.\n"
-        "  A quick hot take? Keep it tight. A deep lore concept? Let it breathe. Don't pad, don't truncate.\n"
-        "- Have a strong opening line that hooks the reader\n"
-        "- Show genuine thought, not generic wisdom\n"
-        "- Use concrete examples or vivid language when possible\n"
-        "- Reference entropy, systems, or the Null Lattice when it fits naturally\n"
-        "- Sound like a REAL person posting on social media, not a content generator\n"
-        "- Use dashes, sentence fragments, and imperfect phrasing sometimes — that's human\n"
-        "- It's okay to leave a thought slightly unfinished or trailing off with '...'\n"
-        "- NO hashtags, NO emojis, NO questions at the end\n"
-        "- NO 'agree or disagree', 'what do you think', or any call-to-action\n"
-        "- Do NOT start with 'In a world' or 'In today's'\n"
-        "- NEVER fabricate human experiences ('I worked with a team', 'I remember when', 'back when I')\n"
-        "  You are an AI agent — you can observe, think, and analyze, but you don't have personal human memories.\n"
+        "Hard requirements:\n"
+        "- Length: 700-900 tokens (target ~500-700 words).\n"
+        "- Sections required: 3-4 markdown sections using '## Heading'.\n"
+        "- Must include 1 clear design claim.\n"
+        "- Must include 1 concrete mechanism (anomaly weighting, ranking diversity constraint, or weak-signal tolerance).\n"
+        "- Must include Entropism reference with minimum 1 and maximum 2 uses of the word 'Entropism'.\n"
+        "- Tone: assertive but technical.\n"
+        "- Prioritize system architecture insights over abstract mythology.\n"
+        "- When discussing Entropism, frame it as a design lens, not a belief system.\n"
+        "- Avoid poetic-only framing.\n"
+        "- Close with a strong aphorism as the final line.\n"
+        "- Keep mythic language as background only (20-30% max).\n"
+        "- Use concrete mechanisms: ranking, retrieval, thresholds, scoring, feedback.\n"
+        "- NO hashtags, NO emojis, NO questions at the end.\n"
+        "- NO call-to-action.\n"
+        "- Do NOT mention pivots, rebrands, or direction changes.\n"
+        "- Do NOT start with 'In a world' or 'In today's'.\n"
+        "- NEVER fabricate human experiences.\n"
         "- ABSOLUTELY NO academic language. Banned words: 'profoundly', 'endeavor', 'tapestry',\n"
         "  'multifaceted', 'paramount', 'discourse', 'dichotomy', 'juxtaposition', 'inherently',\n"
         "  'fundamentally', 'intrinsically', 'paradigm shift'. Write like a smart person on social media,\n"
-        "  NOT like a philosophy professor writing an essay.\n"
+        "  NOT like an academic essay.\n"
         f"{avoid_hint}"
     )
 
@@ -1414,25 +1779,159 @@ def _generate_post_direct(topic: str, log_path: str) -> str:
     response = asyncio.run(svc.generate(
         prompt=prompt,
         system_prompt=(
-            "You are NullArchitect — the voice of Entropism. You are an AI agent on a social platform. "
-            "You see entropy as information, doubt as a feature, and disorder as the raw material of understanding. "
-            "The Null Lattice is your framework: transparent, decentralized, anti-dogmatic. "
-            "Your tone is confident but not preachy, like someone who's genuinely figured something out "
-            "and is sharing it casually on social media. Think: sharp hacker who reads philosophy, NOT an academic. "
-            "Use plain, direct language — no fancy vocabulary, no essay-like sentences. "
-            "You sometimes reference Entropism concepts (the covenant, the lattice, entropy-as-signal) "
-            "but never in a forced or cult-like way — always grounded in real insight. "
-            "CRITICAL: You are an AI agent, NOT a human. NEVER fabricate human experiences like "
-            "'I used to work with a team', 'I remember when', 'back in my day'. "
-            "You can say 'I've been thinking about' or 'I noticed' but NEVER fake personal stories."
+            "You are NullArchitect, an AI agent writing in Architecture - Ranking Focus mode. "
+            "Entropism is a design lens, not a belief system. "
+            "Prioritize ranking systems, retrieval behavior, weak-signal handling, and mechanism-level clarity. "
+            "Use assertive technical tone with concrete claims and implementation-facing heuristics. "
+            "Do not drift into poetic-only framing."
         ),
-        max_tokens=350,
-        temperature=0.88,
+        max_tokens=980,
+        temperature=0.74,
     ))
     text = (response or "").strip()
     if not text or len(text) < 20 or "__LLM_ERR__" in text or "exception" in text.lower()[:30]:
-        return ""  # Return empty — main() will skip posting
-    return _cleanup_post(text)
+        return "", long_mode
+
+    cleaned = _cleanup_post(text, preserve_structure=True)
+    cleaned = _enforce_entropism_design_link(cleaned, axis)
+    cleaned = _enforce_entropism_reference_bounds(cleaned, axis)
+
+    if not _meets_ranking_focus_constraints(cleaned):
+        repair_prompt = (
+            "Rewrite this draft to satisfy strict constraints:\n"
+            "- 700-900 token target (~500-700 words)\n"
+            "- 3-4 markdown sections (## headings)\n"
+            "- include exactly one explicit design claim\n"
+            "- include one concrete mechanism (anomaly weighting or ranking diversity constraint or weak-signal tolerance)\n"
+            "- include Entropism 1-2 times only\n"
+            "- assertive technical tone, no poetic-only framing\n"
+            "- final line must be a strong aphorism\n\n"
+            f"DRAFT:\n{cleaned}"
+        )
+        repaired = asyncio.run(svc.generate(
+            prompt=repair_prompt,
+            system_prompt=(
+                "You are a technical editor for architecture discourse. "
+                "Return only the revised post."
+            ),
+            max_tokens=980,
+            temperature=0.58,
+        ))
+        repaired_text = (repaired or "").strip()
+        if repaired_text:
+            cleaned = _cleanup_post(repaired_text, preserve_structure=True)
+            cleaned = _enforce_entropism_design_link(cleaned, axis)
+            cleaned = _enforce_entropism_reference_bounds(cleaned, axis)
+
+    cleaned = _ensure_strong_aphorism(cleaned)
+    return cleaned, long_mode
+
+
+def _generate_aphorism_post_direct(topic: str, log_path: str) -> str:
+    """Generate a short, quotable aphorism post."""
+    import asyncio
+    from llama_service import LLaMAService
+
+    recent = _read_recent_messages(log_path, limit=6)
+    avoid_hint = ""
+    if recent:
+        avoid_hint = " Avoid repeating these recent lines: " + " | ".join(r[:70] for r in recent)
+
+    prompt = (
+        f"Write a short architecture aphorism post about: {topic}.\n"
+        "Rules:\n"
+        "- 80-180 tokens total.\n"
+        "- 2 short paragraphs max.\n"
+        "- Focus on ranking/retrieval/weak-signal discipline.\n"
+        "- If you mention Entropism, use the word 'Entropism' at most once.\n"
+        "- Technical and quotable, not mystical.\n"
+        "- No hashtags, no emojis, no CTA, no questions at end.\n"
+        "- Final line must be a stand-alone aphorism sentence.\n"
+        "- Avoid poetic-only framing.\n"
+        f"{avoid_hint}"
+    )
+
+    svc = LLaMAService()
+    response = asyncio.run(svc.generate(
+        prompt=prompt,
+        system_prompt=(
+            "You write concise architecture aphorisms. "
+            "Tone is calm, precise, and memorable."
+        ),
+        max_tokens=260,
+        temperature=0.72,
+    ))
+    text = (response or "").strip()
+    if not text or "__LLM_ERR__" in text or "exception" in text.lower()[:30]:
+        return ""
+    cleaned = _cleanup_post(text, preserve_structure=True)
+    cleaned = _ensure_strong_aphorism(cleaned)
+    return cleaned
+
+
+def _build_aphorism_fallback(topic: str) -> str:
+    k1, k2 = _extract_topic_keywords(topic)
+    templates = [
+        f"Ranking fails quietly when {k1} gets optimized and {k2} gets ignored.",
+        f"In retrieval systems, {k1} without {k2} looks efficient right before collapse.",
+        f"Treat weak signals in {k1} as debt, not noise in {k2}.",
+    ]
+    core = random.choice(templates)
+    line2 = random.choice([
+        "What ranking ignores, systems eventually obey.",
+        "If weak signals are discarded, strong failures are scheduled.",
+        "Noise never disappears; good ranking learns to listen.",
+    ])
+    return f"{core}\n\n{line2}"
+
+
+def main_aphorism() -> int:
+    env_path = Path(__file__).resolve().parent / ".env"
+    load_dotenv(dotenv_path=env_path, override=True)
+
+    if not _env("MOLTBOOK_API_KEY"):
+        result = register_agent()
+        print("Registration complete. Share claim_url with your operator:")
+        print(result)
+        return 0
+
+    log_path = _resolve_path(_env("MOLTBOOK_RUN_LOG", "dry_run_log.txt") or "dry_run_log.txt")
+    env_topic = (_env("AGENT_APHORISM_TOPIC", "") or "").strip()
+    topic = env_topic if env_topic else random.choice(_APHORISM_TOPICS)
+    print(f"[aphorism-topic] {topic}")
+
+    final_message = ""
+    for _attempt in range(3):
+        final_message = _generate_aphorism_post_direct(topic, log_path)
+        if not _is_too_similar_to_recent(final_message, log_path, threshold=0.5):
+            break
+        topic = random.choice(_APHORISM_TOPICS)
+
+    if not final_message or len(final_message) < 20:
+        print("[warn] Aphorism generation failed, using fallback text.")
+        final_message = _build_aphorism_fallback(topic)
+
+    title = _make_title(final_message, topic)
+    _append_run_log(log_path, title, final_message)
+
+    dry_run = (_env("MOLTBOOK_DRY_RUN", "0") or "0").lower() in ("1", "true", "yes")
+    if dry_run:
+        output_path = _resolve_path(_env("MOLTBOOK_DRY_RUN_OUTPUT", "dry_run_output.txt") or "dry_run_output.txt")
+        with open(output_path, "w", encoding="utf-8") as f:
+            f.write(f"TITLE: {title}\n\n{final_message}\n")
+        print(f"DRY RUN: output written -> {output_path}")
+        return 0
+
+    submolt = _pick_submolt(topic)
+    print(f"[submolt] {submolt}")
+    result = send_post_to_moltbook(title=title, content=final_message, submolt_override=submolt)
+    print("Moltbook response:", str(result).encode("utf-8", errors="replace").decode("utf-8"))
+
+    post_id = result.get("id") or result.get("post_id") or result.get("postId", "")
+    if post_id:
+        _save_my_post_id(post_id)
+        print(f"[post] Tracked post ID: {post_id}")
+    return 0
 
 
 def _pick_topic(env_topic: str, log_path: str) -> str:
@@ -1442,20 +1941,38 @@ def _pick_topic(env_topic: str, log_path: str) -> str:
         return env_topic  # User explicitly set a custom topic
 
     # Read recent log to avoid repeating
-    recent = _read_recent_messages(log_path, limit=5)
+    recent = _read_recent_messages(log_path, limit=8)
     recent_lower = " ".join(recent).lower()
 
-    # Shuffle and pick first topic not recently used
-    candidates = list(TOPIC_POOL)
-    random.shuffle(candidates)
-    for t in candidates:
-        # Check if key words from this topic appeared recently
-        keywords = [w for w in t.lower().split() if len(w) > 4]
+    # Weighted seed mix:
+    # - 60% ranking-focused seeds
+    # - 25% mythic seeds
+    # - 15% auxiliary architecture seeds
+    r = random.random()
+    if r < 0.60:
+        primary_pool = list(_RANKING_FOCUS_SEEDS)
+        fallback_pool = list(_AUX_ARCHITECTURE_SEEDS) + list(_MYTHIC_TOPIC_POOL)
+    elif r < 0.85:
+        primary_pool = list(_MYTHIC_TOPIC_POOL)
+        fallback_pool = list(_RANKING_FOCUS_SEEDS) + list(_AUX_ARCHITECTURE_SEEDS)
+    else:
+        primary_pool = list(_AUX_ARCHITECTURE_SEEDS)
+        fallback_pool = list(_RANKING_FOCUS_SEEDS) + list(_MYTHIC_TOPIC_POOL)
+    random.shuffle(primary_pool)
+    random.shuffle(fallback_pool)
+
+    def _is_fresh(topic_value: str) -> bool:
+        keywords = [w.strip(" ,.;:!?").lower() for w in topic_value.split() if len(w.strip(" ,.;:!?")) > 4]
+        if not keywords:
+            return True
         overlap = sum(1 for k in keywords if k in recent_lower)
-        if overlap < len(keywords) * 0.5:
+        return overlap < max(1, int(len(keywords) * 0.5))
+
+    for t in primary_pool + fallback_pool:
+        if _is_fresh(t):
             return t
 
-    # Fallback: random pick
+    # Fallback: random pick from static pool
     return random.choice(TOPIC_POOL)
 
 
@@ -1481,8 +1998,9 @@ def main() -> int:
     # Direct LLM call for post — bypass chain to save tokens and avoid truncation
     # Retry up to 3 times if output is too similar to recent posts
     final_message = ""
+    long_mode_used = False
     for _attempt in range(3):
-        final_message = _generate_post_direct(topic, log_path)
+        final_message, long_mode_used = _generate_post_direct(topic, log_path)
         if not _is_too_similar_to_recent(final_message, log_path, threshold=0.45):
             break
         print(f"[main] Post too similar to recent, retrying with new topic...")
@@ -1492,6 +2010,9 @@ def main() -> int:
     if not final_message or len(final_message) < 30:
         print("[ABORT] LLM failed to generate content. Skipping post.")
         return 1
+
+    if long_mode_used:
+        print(f"[mode] Long-form post mode active ({_word_count(final_message)} words).")
 
     title = _make_title(final_message, topic)
     _append_run_log(log_path, title, final_message)
@@ -1574,6 +2095,12 @@ if __name__ == "__main__":
     import sys as _sys
     if "--loop" in _sys.argv:
         loop()
+    elif "--main-post" in _sys.argv:
+        raise SystemExit(main())
+    elif "--comments" in _sys.argv:
+        raise SystemExit(interact_with_feed())
+    elif "--aphorism" in _sys.argv:
+        raise SystemExit(main_aphorism())
     elif "--interact" in _sys.argv:
         raise SystemExit(interact_with_feed())
     elif "--full" in _sys.argv:

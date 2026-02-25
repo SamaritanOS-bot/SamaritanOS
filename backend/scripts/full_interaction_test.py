@@ -43,7 +43,7 @@ def test_posts(count=10):
         topic = _pick_topic("", log_path)
         print(f"  Topic: {topic}")
 
-        content = _generate_post_direct(topic, log_path)
+        content, _ = _generate_post_direct(topic, log_path)
         title = _make_title(content, topic)
 
         print(f"  Title: {title}")

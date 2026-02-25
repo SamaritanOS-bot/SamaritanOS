@@ -46,12 +46,15 @@ dist/
 llama_call_log.txt
 chain_last_output.json
 dry_run_log.txt
+backend/.post_cadence_state.json
 dry_run_output.txt
 
 # Temp files
 tmp/
 .commented_posts
 .my_post_ids
+.recent_refs
+.recent_comment_targets.json
 
 # OS
 .DS_Store

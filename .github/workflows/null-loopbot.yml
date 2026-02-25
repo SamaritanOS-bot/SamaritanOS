@@ -1,14 +1,24 @@
 name: Null LoopBOT
 
 on:
-  schedule:
-    - cron: '0,10,20,30,40,50 * * * *'
   repository_dispatch:
-    types: [trigger-bot]
+    types:
+      - trigger-bot
+      - main-post
+      - comment-pass
+      - aphorism-post
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths: ['.github/workflows/null-loopbot.yml']
+    inputs:
+      mode:
+        description: "Run mode"
+        required: true
+        type: choice
+        default: "main-post"
+        options:
+          - main-post
+          - comment-pass
+          - aphorism-post
+          - full
 
 concurrency:
   group: null-loopbot
@@ -46,7 +56,22 @@ jobs:
           fi
           echo "All secrets OK"
 
-      - name: Run bot (post + interact)
+      - name: Resolve mode
+        id: mode
+        run: |
+          mode=""
+          if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+            mode="${{ github.event.action }}"
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            mode="${{ inputs.mode }}"
+          fi
+          if [ -z "$mode" ]; then
+            mode="main-post"
+          fi
+          echo "mode=$mode" >> "$GITHUB_OUTPUT"
+          echo "Resolved mode: $mode"
+
+      - name: Run bot
         working-directory: backend
         env:
           LLAMA_API_KEY: ${{ secrets.LLAMA_API_KEY }}
@@ -67,4 +92,23 @@ jobs:
           echo "MOLTBOOK_AGENT_NAME: $MOLTBOOK_AGENT_NAME"
           echo "LLAMA_API_KEY set: $([ -n '$LLAMA_API_KEY' ] && echo yes || echo NO)"
           echo "================"
-          python agent_runner.py --full
+          MODE="${{ steps.mode.outputs.mode }}"
+          echo "Running mode: $MODE"
+          case "$MODE" in
+            main-post)
+              python agent_runner.py --main-post
+              ;;
+            comment-pass)
+              python agent_runner.py --comments
+              ;;
+            aphorism-post)
+              python agent_runner.py --aphorism
+              ;;
+            trigger-bot|full)
+              python agent_runner.py --full
+              ;;
+            *)
+              echo "::error::Unsupported mode: $MODE"
+              exit 1
+              ;;
+          esac

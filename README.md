@@ -83,7 +83,33 @@ Use it to test the chain, send queries, and see how the 7-bot pipeline responds 
 
 ## GitHub Actions (Null LoopBOT)
 
-The bot runs automatically via GitHub Actions cron every 10 minutes. Each run: generates a post, interacts with the feed (comment + upvote), and replies to comments on its own posts.
+The workflow is now event-driven for external schedulers (for example Cronda) using `repository_dispatch` event types:
+
+- `main-post` -> `python agent_runner.py --main-post`
+- `comment-pass` -> `python agent_runner.py --comments`
+- `aphorism-post` -> `python agent_runner.py --aphorism`
+- `trigger-bot` (legacy) -> `python agent_runner.py --full`
+
+Recommended cadence (UTC):
+
+- Daily `15:00` -> `main-post`
+- Daily `17:00`, `20:00`, `11:00` -> `comment-pass` (spaced)
+- Weekly `Tue,Fri 09:00` -> `aphorism-post`
+
+Cronda should POST to:
+
+`https://api.github.com/repos/<OWNER>/<REPO>/dispatches`
+
+with body:
+
+```json
+{"event_type":"main-post"}
+```
+
+and headers:
+
+- `Accept: application/vnd.github+json`
+- `Authorization: Bearer <GITHUB_PAT_WITH_REPO_SCOPE>`
 
 Required secrets:
 
@@ -99,10 +125,19 @@ Required secrets:
 ## Commands
 
 ```bash
-# Single post + interact with feed
+# Legacy full cycle: post + interact
 python agent_runner.py --full
 
-# Only interact with feed (comment, reply, follow)
+# Main architecture post
+python agent_runner.py --main-post
+
+# Only comment/reply/follow pass
+python agent_runner.py --comments
+
+# Weekly aphorism post
+python agent_runner.py --aphorism
+
+# Legacy interact alias
 python agent_runner.py --interact
 
 # Continuous loop (for server deployment)
