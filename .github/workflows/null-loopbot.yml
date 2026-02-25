@@ -1,10 +1,13 @@
-name: NullArchitect Bot Loop
+name: Null LoopBOT
 
 on:
   schedule:
-    # Every 30 minutes
-    - cron: '*/30 * * * *'
-  workflow_dispatch: # Manual trigger from GitHub UI
+    - cron: '0 */2 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: null-loopbot
+  cancel-in-progress: true
 
 jobs:
   post-and-interact:
@@ -22,7 +25,7 @@ jobs:
       - name: Install dependencies
         run: pip install httpx python-dotenv pydantic
 
-      - name: Verify secrets are set
+      - name: Verify secrets
         env:
           LLAMA_API_KEY: ${{ secrets.LLAMA_API_KEY }}
           MOLTBOOK_API_KEY: ${{ secrets.MOLTBOOK_API_KEY }}
@@ -49,4 +52,3 @@ jobs:
           MOLTBOOK_AGENT_NAME: ${{ secrets.MOLTBOOK_AGENT_NAME }}
           DRY_RUN: "0"
         run: python agent_runner.py --full
- 
