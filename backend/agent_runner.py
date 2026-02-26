@@ -6,6 +6,7 @@ import os
 import sys
 import hashlib
 import json
+from difflib import SequenceMatcher
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
@@ -1068,12 +1069,19 @@ def _generate_comment(post_title: str, post_content: str, author_name: str = "",
         text = " ".join(sentences[:3])
     if not text or len(text) < 10 or "__LLM_ERR__" in text or "exception" in text.lower()[:30]:
         return ""  # Return empty — caller will skip posting
-    return _cleanup_post(text)
+    cleaned = _cleanup_post(text)
+    if not cleaned:
+        return ""
+    if _is_comment_too_similar_to_recent(cleaned):
+        print("[comment] Skipping repeated comment candidate.")
+        return ""
+    return cleaned
 
 
 _commented_posts_file = Path(__file__).resolve().parent / ".commented_posts"
 _my_posts_file = Path(__file__).resolve().parent / ".my_post_ids"
 _recent_comment_targets_file = Path(__file__).resolve().parent / ".recent_comment_targets.json"
+_recent_comment_texts_file = Path(__file__).resolve().parent / ".recent_comment_texts.json"
 
 
 def _load_commented_posts() -> set:
@@ -1198,6 +1206,99 @@ def _record_comment_target(state: dict, author: str, post_id: str) -> None:
     })
 
 
+def _normalize_comment_text(text: str) -> str:
+    import re
+    normalized = (text or "").strip().lower()
+    normalized = re.sub(r"@\w+", " ", normalized)
+    normalized = re.sub(r"[^a-z0-9\s]", " ", normalized)
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    return normalized
+
+
+def _prune_recent_comment_texts(rows: list[dict]) -> list[dict]:
+    now = datetime.now(timezone.utc)
+    kept: list[dict] = []
+    for row in rows[-250:]:
+        if not isinstance(row, dict):
+            continue
+        text = str(row.get("text", "")).strip()
+        if not text:
+            continue
+        ts_raw = str(row.get("ts", "")).strip()
+        ts = _parse_iso_utc(ts_raw)
+        if ts and (now - ts).days > 7:
+            continue
+        kept.append({
+            "ts": ts_raw or now.isoformat(),
+            "text": text[:500],
+            "norm": str(row.get("norm", "")).strip() or _normalize_comment_text(text),
+            "post_id": str(row.get("post_id", "")),
+            "source": str(row.get("source", "")),
+        })
+    return kept[-200:]
+
+
+def _load_recent_comment_texts() -> list[dict]:
+    try:
+        if not _recent_comment_texts_file.exists():
+            return []
+        raw = json.loads(_recent_comment_texts_file.read_text(encoding="utf-8"))
+        rows = raw if isinstance(raw, list) else []
+        return _prune_recent_comment_texts(rows)
+    except Exception:
+        return []
+
+
+def _save_recent_comment_texts(rows: list[dict]) -> None:
+    try:
+        _recent_comment_texts_file.write_text(
+            json.dumps(_prune_recent_comment_texts(rows), ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+    except Exception:
+        pass
+
+
+def _is_comment_too_similar_to_recent(text: str) -> bool:
+    candidate = _normalize_comment_text(text)
+    if not candidate:
+        return True
+
+    try:
+        window = max(1, int(_env("AGENT_COMMENT_RECENT_WINDOW", "3") or 3))
+    except Exception:
+        window = 3
+    try:
+        threshold = float(_env("AGENT_COMMENT_SIMILARITY_THRESHOLD", "0.88") or 0.88)
+    except Exception:
+        threshold = 0.88
+
+    for row in _load_recent_comment_texts()[-window:]:
+        prev = str(row.get("norm", "")).strip() or _normalize_comment_text(str(row.get("text", "")))
+        if not prev:
+            continue
+        if candidate == prev:
+            return True
+        if SequenceMatcher(None, candidate, prev).ratio() >= threshold:
+            return True
+    return False
+
+
+def _record_recent_comment_text(text: str, post_id: str = "", source: str = "") -> None:
+    clean = _cleanup_post(text)
+    if not clean:
+        return
+    rows = _load_recent_comment_texts()
+    rows.append({
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "text": clean[:500],
+        "norm": _normalize_comment_text(clean),
+        "post_id": str(post_id or ""),
+        "source": str(source or ""),
+    })
+    _save_recent_comment_texts(rows)
+
+
 def fetch_post_comments(post_id: str, limit: int = 10) -> list:
     """Fetch comments on a specific post."""
     base = _moltbook_base()
@@ -1295,9 +1396,24 @@ def _generate_reply(original_comment: str, post_content: str, commenter_name: st
         text = " ".join(sentences[:3])
     # Clean up any double spaces from banned word removal
     text = re.sub(r'\s{2,}', ' ', text).strip()
-    if not text or len(text) < 10 or "__LLM_ERR__" in text:
-        return "Interesting angle — that shifts how I was thinking about this."
-    return _cleanup_post(text)
+    cleaned = _cleanup_post(text)
+    if not cleaned or len(cleaned) < 10 or "__LLM_ERR__" in cleaned:
+        fallback_candidates = [
+            "Wait — if that tradeoff is real, where do you place the failure budget?",
+            "That constraint is doing more work than it looks like. What breaks first when load spikes?",
+            "The blind spot might be ranking inertia — weak signals never get enough retries.",
+            "If noise is part of the signal, the filter can't be static. How do you adapt it?",
+            "Good push. The harder question is who owns the false-negative cost in that design.",
+        ]
+        random.shuffle(fallback_candidates)
+        for candidate in fallback_candidates:
+            if not _is_comment_too_similar_to_recent(candidate):
+                return candidate
+        return ""
+    if _is_comment_too_similar_to_recent(cleaned):
+        print("[reply] Skipping repeated reply candidate.")
+        return ""
+    return cleaned
 
 
 def _sync_my_post_ids() -> None:
@@ -1382,6 +1498,7 @@ def reply_to_comments_on_my_posts() -> int:
             if "error" not in result:
                 replied += 1
                 _save_commented_post(cid)
+                _record_recent_comment_text(reply_text, post_id=pid, source="reply")
                 our_previous_replies.append(reply_text[:100])
             elif "429" in str(result) or "rate" in str(result).lower():
                 wait = result.get("retry_after_seconds", 25)
@@ -1392,6 +1509,7 @@ def reply_to_comments_on_my_posts() -> int:
                 if "error" not in result:
                     replied += 1
                     _save_commented_post(cid)
+                    _record_recent_comment_text(reply_text, post_id=pid, source="reply")
             time.sleep(8)
 
     print(f"[reply] Done: {replied} replies")
@@ -1537,6 +1655,9 @@ def interact_with_feed() -> int:
 
         # Generate and post comment
         comment_text = _generate_comment(title, content, author_name=author, thread_context=thread_context)
+        if not comment_text or len(comment_text) < 10:
+            print(f"[interact] Skipping '{title[:50]}' by {author} (empty or repeated comment).")
+            continue
         print(f"[interact] Commenting on: '{title[:50]}' by {author} (score:{post.get('score',0)})")
         print(f"[interact] Comment: {comment_text[:150]}")
         result = comment_on_post(pid, comment_text)
@@ -1546,6 +1667,7 @@ def interact_with_feed() -> int:
             commented_authors_run.add(author_lower)
             _record_comment_target(recent_targets, author_lower, pid)
             _save_recent_comment_targets(recent_targets)
+            _record_recent_comment_text(comment_text, post_id=pid, source="feed")
             if not author_is_engaged:
                 non_engaged_commented += 1
             # Follow authors we actually engaged with

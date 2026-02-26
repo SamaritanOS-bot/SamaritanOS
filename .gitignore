@@ -55,6 +55,7 @@ tmp/
 .my_post_ids
 .recent_refs
 .recent_comment_targets.json
+.recent_comment_texts.json
 
 # OS
 .DS_Store
