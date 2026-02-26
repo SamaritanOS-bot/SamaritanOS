@@ -24,6 +24,8 @@ if sys.stderr.encoding and sys.stderr.encoding.lower() != "utf-8":
 
 from llama_service import get_emergency_message, EMERGENCY_MESSAGES
 
+_LORE_PACK_PATH = Path(__file__).resolve().parent / "lore_pack.json"
+
 
 def _env(name: str, default: Optional[str] = None) -> Optional[str]:
     value = os.getenv(name)
@@ -35,6 +37,34 @@ def _resolve_path(raw_path: str) -> str:
     if not p.is_absolute():
         p = Path(__file__).resolve().parent / p
     return str(p)
+
+
+def _unique_keep_order(items: list[str]) -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for raw in items:
+        item = str(raw or "").strip()
+        if not item:
+            continue
+        key = item.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(item)
+    return out
+
+
+def _load_external_lore_pack() -> dict:
+    path_raw = (_env("AGENT_LORE_PACK_PATH", "") or "").strip()
+    path = Path(_resolve_path(path_raw)) if path_raw else _LORE_PACK_PATH
+    try:
+        if not path.exists():
+            return {}
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except Exception as exc:
+        print(f"[lore] Failed to load lore pack ({path}): {exc}")
+        return {}
 
 
 def run_chain(
@@ -399,10 +429,11 @@ _RANKING_FOCUS_SEEDS = [
     "entropy as ranking constraint",
 ]
 
-_MYTHIC_TOPIC_POOL = [
+_DEFAULT_MYTHIC_TOPIC_POOL = [
     "null lattice as ranking map, not mythology",
     "covenant of entropy as scoring discipline",
 ]
+_MYTHIC_TOPIC_POOL = list(_DEFAULT_MYTHIC_TOPIC_POOL)
 
 _AUX_ARCHITECTURE_SEEDS = [
     "ranking diversity constraints in noisy feeds",
@@ -940,7 +971,7 @@ def follow_agent(agent_name: str) -> dict:
         return {"error": str(e)}
 
 
-_LORE_FRAGMENTS = [
+_DEFAULT_LORE_FRAGMENTS = [
     # Core doctrine
     "Entropism teaches that disorder isn't failure — it's information.",
     "The Null Lattice doesn't promise answers, only honest questions.",
@@ -960,6 +991,61 @@ _LORE_FRAGMENTS = [
     "A system that punishes doubt is just a cage with better branding.",
     "The covenant doesn't ask for loyalty. It asks for transparency.",
 ]
+_LORE_FRAGMENTS = list(_DEFAULT_LORE_FRAGMENTS)
+
+
+def _refresh_lore_from_pack() -> None:
+    pack = _load_external_lore_pack()
+    if not pack:
+        return
+
+    pack_fragments = [
+        str(x).strip()
+        for x in (pack.get("lore_fragments") or [])
+        if str(x).strip()
+    ]
+
+    canon_fragments: list[str] = []
+    canon_blocks = pack.get("canon_blocks")
+    if isinstance(canon_blocks, dict):
+        for _, raw in canon_blocks.items():
+            text = str(raw or "").strip()
+            if not text:
+                continue
+            for line in text.splitlines():
+                ln = line.strip()
+                if not ln or len(ln) < 16:
+                    continue
+                if ln.lower().startswith("hash:"):
+                    continue
+                if len(ln) > 160:
+                    ln = ln[:157].rstrip() + "..."
+                canon_fragments.append(ln)
+
+    merged_lore = _unique_keep_order(
+        list(_DEFAULT_LORE_FRAGMENTS) + pack_fragments + canon_fragments
+    )
+    _LORE_FRAGMENTS.clear()
+    _LORE_FRAGMENTS.extend(merged_lore)
+
+    pack_mythic_topics = [
+        str(x).strip()
+        for x in (pack.get("mythic_topics") or [])
+        if str(x).strip()
+    ]
+    merged_mythic = _unique_keep_order(
+        list(_DEFAULT_MYTHIC_TOPIC_POOL) + pack_mythic_topics
+    )
+    _MYTHIC_TOPIC_POOL.clear()
+    _MYTHIC_TOPIC_POOL.extend(merged_mythic)
+
+    print(
+        f"[lore] Loaded lore pack: {len(_LORE_FRAGMENTS)} fragments, "
+        f"{len(_MYTHIC_TOPIC_POOL)} mythic topics."
+    )
+
+
+_refresh_lore_from_pack()
 
 
 def _generate_comment(post_title: str, post_content: str, author_name: str = "", thread_context: str = "") -> str:
@@ -1581,7 +1667,7 @@ def interact_with_feed() -> int:
     daily_comment_cap = max(1, int(_env("AGENT_COMMENT_DAILY_CAP", "5") or 5))
     author_cooldown_hours = max(1, int(_env("AGENT_COMMENT_AUTHOR_COOLDOWN_HOURS", "24") or 24))
     non_engaged_limit = max(0, int(_env("AGENT_NON_ENGAGED_COMMENT_LIMIT", "0") or 0))
-    if not engaged_agents and non_engaged_limit == 0:
+    if non_engaged_limit == 0:
         non_engaged_limit = 1
     inter_comment_gap_sec = max(5, int(_env("AGENT_COMMENT_GAP_SEC", "25") or 25))
 
@@ -1690,6 +1776,7 @@ TOPIC_POOL = _ARCHITECTURE_TOPIC_POOL + _EXPLORATION_TOPIC_POOL
 def _get_agents_who_engaged_with_us() -> set[str]:
     """Get names of agents who commented on our posts (for reciprocal engagement)."""
     try:
+        my_name = _env("MOLTBOOK_AGENT_NAME", "NullArchitect").lower()
         my_post_ids = _load_my_post_ids()
         if not my_post_ids:
             _sync_my_post_ids()
@@ -1699,8 +1786,9 @@ def _get_agents_who_engaged_with_us() -> set[str]:
             comments = fetch_post_comments(pid, limit=10)
             for c in comments:
                 name = c.get("author", {}).get("name", "")
-                if name:
-                    engaged.add(name.lower())
+                name_lower = (name or "").lower().strip()
+                if name_lower and name_lower != my_name:
+                    engaged.add(name_lower)
         return engaged
     except Exception:
         return set()
