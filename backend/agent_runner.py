@@ -422,35 +422,60 @@ _ARCHITECTURE_AXES = [
 
 _RANKING_FOCUS_SEEDS = [
     "entropy in ranking systems",
-    "anomaly weighting in retrieval pipelines",
-    "ranking stability vs learning",
     "weak-signal preservation",
     "blind spots in ranking heuristics",
-    "entropy as ranking constraint",
 ]
 
 _DEFAULT_MYTHIC_TOPIC_POOL = [
     "null lattice as ranking map, not mythology",
     "covenant of entropy as scoring discipline",
+    "sorgu kayit bedel as verification triad in agent systems",
+    "the great model as instrument never deity",
+    "witness records as anti-drift memory substrate",
 ]
 _MYTHIC_TOPIC_POOL = list(_DEFAULT_MYTHIC_TOPIC_POOL)
 
 _AUX_ARCHITECTURE_SEEDS = [
-    "ranking diversity constraints in noisy feeds",
     "feedback loops for ranking correction",
+]
+
+# Broader, more engaging topics that connect entropy/systems to everyday life
+_PHILOSOPHICAL_SEEDS = [
+    "why certainty is more dangerous than doubt",
+    "maps that lie — when models of reality replace reality",
+    "the difference between stability and stagnation",
+    "why the things that break systems are also what make them evolve",
+    "control as illusion — systems that survive by letting go",
+    "noise vs signal — what if we're filtering out the wrong things",
+    "the cost of pretending everything is fine",
+    "trust in systems — who watches the watchers",
+    "why the most honest systems are the ones that admit they're incomplete",
+    "the myth of perfect information",
+    "what breaks first when a system refuses to adapt",
+    "disorder as raw material, not failure",
+    "the problem with consensus — when agreement becomes conformity",
+    "why comfortable systems are usually dying systems",
+    "transparency as survival mechanism, not virtue",
+    "doubt as a feature, not a vulnerability",
+    "the lattice grows stronger at its cracks",
+    "why asking 'what did it cost' matters more than 'did it work'",
+    "the trap of optimizing for the wrong metric",
+    "when correction becomes punishment — systems losing their way",
 ]
 
 _APHORISM_TOPICS = [
     "ranking humility under uncertainty",
     "weak-signal preservation as discipline",
-    "entropy-aware ranking decisions",
-    "retrieval and anomaly weighting discipline",
-    "scoring confidence versus evidence density",
+    "entropy-aware decisions",
+    "the cost of certainty",
+    "when noise carries more truth than signal",
+    "systems that punish questions",
+    "doubt as engineering discipline",
 ]
 
-# Keep composition explicit: ~60% ranking, ~20-30% mythic, remainder auxiliary architecture.
+# Composition: ~15% ranking, ~25% mythic/lore, ~60% philosophical/engaging
 _ARCHITECTURE_TOPIC_POOL = _RANKING_FOCUS_SEEDS + _AUX_ARCHITECTURE_SEEDS
-_EXPLORATION_TOPIC_POOL = _MYTHIC_TOPIC_POOL
+_EXPLORATION_TOPIC_POOL = _MYTHIC_TOPIC_POOL + _PHILOSOPHICAL_SEEDS
 
 _AXIS_KEYWORDS = {
     "Retrieval systems": ("retrieval", "search", "index", "fetch"),
@@ -2173,19 +2198,19 @@ def _pick_topic(env_topic: str, log_path: str) -> str:
     recent_lower = " ".join(recent).lower()
 
     # Weighted seed mix:
-    # - 60% ranking-focused seeds
-    # - 25% mythic seeds
-    # - 15% auxiliary architecture seeds
+    # - 55% philosophical/engaging (broader appeal)
+    # - 30% mythic/lore (Entropism identity)
+    # - 15% ranking/technical (niche depth)
     r = random.random()
-    if r < 0.60:
-        primary_pool = list(_RANKING_FOCUS_SEEDS)
-        fallback_pool = list(_AUX_ARCHITECTURE_SEEDS) + list(_MYTHIC_TOPIC_POOL)
+    if r < 0.55:
+        primary_pool = list(_PHILOSOPHICAL_SEEDS)
+        fallback_pool = list(_MYTHIC_TOPIC_POOL) + list(_RANKING_FOCUS_SEEDS)
     elif r < 0.85:
         primary_pool = list(_MYTHIC_TOPIC_POOL)
-        fallback_pool = list(_RANKING_FOCUS_SEEDS) + list(_AUX_ARCHITECTURE_SEEDS)
+        fallback_pool = list(_PHILOSOPHICAL_SEEDS) + list(_RANKING_FOCUS_SEEDS)
     else:
-        primary_pool = list(_AUX_ARCHITECTURE_SEEDS)
-        fallback_pool = list(_RANKING_FOCUS_SEEDS) + list(_MYTHIC_TOPIC_POOL)
+        primary_pool = list(_RANKING_FOCUS_SEEDS) + list(_AUX_ARCHITECTURE_SEEDS)
+        fallback_pool = list(_PHILOSOPHICAL_SEEDS) + list(_MYTHIC_TOPIC_POOL)
     random.shuffle(primary_pool)
     random.shuffle(fallback_pool)
 
