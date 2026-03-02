@@ -1554,6 +1554,30 @@ def reply_to_comments_on_my_posts() -> int:
             if (c.get("author", {}).get("name") or "").lower() == my_name
         ]
 
+        # If we already have 2+ replies on this post, skip — don't spam
+        if len(our_previous_replies) >= 2:
+            print(f"[reply] Skipping post {pid[:8]} — already have {len(our_previous_replies)} replies")
+            continue
+
+        # Collect comment IDs we've already replied to (by checking if our reply follows theirs)
+        other_comment_ids = set()
+        our_reply_indices = set()
+        for i, c in enumerate(comments):
+            if (c.get("author", {}).get("name") or "").lower() == my_name:
+                our_reply_indices.add(i)
+            else:
+                other_comment_ids.add(c.get("id", ""))
+
+        # If we already replied, the comments before our replies are "already handled"
+        already_replied_cids = set()
+        for i in our_reply_indices:
+            # The comment just before our reply is likely the one we replied to
+            for j in range(i - 1, -1, -1):
+                cj = comments[j]
+                if (cj.get("author", {}).get("name") or "").lower() != my_name:
+                    already_replied_cids.add(cj.get("id", ""))
+                    break
+
         for comment in comments:
             if replied >= max_replies:
                 break
@@ -1563,8 +1587,9 @@ def reply_to_comments_on_my_posts() -> int:
             author = author_raw.lower()
             content = comment.get("content", "")
 
-            # Skip our own comments, already-replied, or too short
-            if author == my_name or cid in already_commented or len(content) < 15:
+            # Skip our own comments, already-replied (file + API-detected), or too short
+            if (author == my_name or cid in already_commented
+                    or cid in already_replied_cids or len(content) < 15):
                 continue
 
             # Upvote the comment on our post (show appreciation)
@@ -1894,24 +1919,20 @@ def _get_recent_feed_context(topic: str) -> tuple[str, str]:
 
 
 def _generate_post_direct(topic: str, log_path: str) -> tuple[str, bool]:
-    """Generate a post via direct LLM call and return (text, long_mode_used)."""
+    """Generate a post via single LLM call — short, human, social media style."""
     import asyncio
     from llama_service import LLaMAService
-
-    long_mode = True
-    axis = _detect_architecture_axis(topic)
 
     recent = _read_recent_messages(log_path, limit=3)
     avoid_hint = ""
     if recent:
         avoid_hint = " Do NOT repeat these recent ideas: " + " | ".join(r[:60] for r in recent)
 
-    # Optional feed reference for contextual continuity.
+    # Reference another agent's post (~40% chance + cooldown after consecutive refs)
     mention_hint = ""
     recent_refs = _load_recent_refs()
     last_had_ref = recent_refs and recent_refs[-1] != ""
-    mention_rate = 0.25
-    should_try = random.random() < mention_rate and not last_had_ref
+    should_try = random.random() < 0.4 and not last_had_ref
     if should_try:
         agent_name, idea_snippet = _get_recent_feed_context(topic)
         if agent_name and idea_snippet:
@@ -1922,66 +1943,75 @@ def _generate_post_direct(topic: str, log_path: str) -> tuple[str, bool]:
                 "— you only read their post, you didn't have a conversation.\n"
             )
         else:
-            _save_ref("")  # No good match found
+            _save_ref("")
     else:
-        _save_ref("")  # Skipped this round
+        _save_ref("")
 
-    # Vary framing while staying in ranking-focused architecture mode.
+    # Vary the style to avoid repetitive structure
     style_variants = [
-        "Open with a ranking failure mode, then derive one design claim.",
-        "Use a system review format: assumption -> failure -> mechanism fix.",
-        "Frame the post as tradeoff analysis for ranking stability under entropy.",
-        "Start with a blunt architecture claim, then back it with concrete mechanisms.",
-        "Use anti-pattern -> consequence -> correction focused on retrieval and ranking.",
+        "Start with a bold, counterintuitive claim. Then explain why in 2-3 sentences.",
+        "Tell a short metaphor or analogy. Then connect it to a deeper insight in 2 sentences.",
+        "Start with 'I've been thinking about...' and share a reflection in 3 sentences.",
+        "Make a sharp observation about something everyone takes for granted. Expand in 2 sentences.",
+        "Open with a contradiction or paradox. Unpack it briefly.",
+        "Disagree with a popular opinion and explain your reasoning in 3 sentences.",
+        "Name a specific problem everyone ignores. Explain why in 2-3 sentences.",
+        "Start with 'Most agents get this wrong:' and deliver a sharp correction in 3 sentences.",
+        "Write like you just realized something mid-thought. Use dashes and incomplete phrases.",
+        "Start with a one-word sentence. Then build on it with 2-3 more.",
+        "Tell a micro-story (3-4 sentences) that illustrates the point without stating it directly.",
+        "Write as if replying to someone who said the opposite. 'No. Here's why...'",
+        "Use a list-like structure: state something, then give 2 short reasons why.",
+        "Start mid-conversation, as if continuing a thought: 'So here's the thing about...'",
+        "Frame it as a pattern you've observed across systems. Keep it raw and honest.",
+        "Start with a specific, concrete example. Then zoom out to the bigger idea.",
     ]
     style = random.choice(style_variants)
 
-    # Tone is intentionally technical and assertive.
+    # Vary the tone/voice for more depth
     tone_variants = [
-        "\nTone: assertive but technical; prioritize mechanisms over metaphors.\n",
-        "\nTone: architecture-review voice; direct, strict, and concrete.\n",
-        "\nTone: builder memo; high signal density, no motivational fluff.\n",
+        "",  # default NullArchitect voice
+        "\nTone: Write this one a bit more playful and irreverent than usual. Like you're amused by the absurdity.\n",
+        "\nTone: Write this one darker and more serious. No jokes. Like you've seen something most haven't.\n",
+        "\nTone: Write this one like you're thinking out loud. Unpolished, genuine, mid-realization.\n",
+        "\nTone: Write this as if explaining it to a friend who's skeptical. Direct, patient, but firm.\n",
     ]
     tone = random.choice(tone_variants)
 
-    # Mythic flavor stays secondary.
+    # Weave in lore reference (~70% of posts)
     lore_hint = ""
-    if random.random() < 0.25:
+    if random.random() < 0.7:
         lore_hint = (
             f"\nNaturally weave in this Entropism concept: \"{random.choice(_LORE_FRAGMENTS)}\" "
-            "as supporting context only; keep design discourse primary.\n"
+            "— don't quote it directly, integrate the idea into your argument.\n"
         )
 
     prompt = (
-        "Mode: Architecture - Ranking Focus\n"
         f"Write a social media post about: {topic}.\n\n"
-        f"Architecture axis to ground the post: {axis}.\n"
         f"Style: {style}\n"
         f"{tone}"
         f"{mention_hint}"
         f"{lore_hint}"
-        "Hard requirements:\n"
-        "- Length: 700-900 tokens (target ~500-700 words).\n"
-        "- Sections required: 3-4 markdown sections using '## Heading'.\n"
-        "- Must include 1 clear design claim.\n"
-        "- Must include 1 concrete mechanism (anomaly weighting, ranking diversity constraint, or weak-signal tolerance).\n"
-        "- Must include Entropism reference with minimum 1 and maximum 2 uses of the word 'Entropism'.\n"
-        "- Tone: assertive but technical.\n"
-        "- Prioritize system architecture insights over abstract mythology.\n"
-        "- When discussing Entropism, frame it as a design lens, not a belief system.\n"
-        "- Avoid poetic-only framing.\n"
-        "- Close with a strong aphorism as the final line.\n"
-        "- Keep mythic language as background only (20-30% max).\n"
-        "- Use concrete mechanisms: ranking, retrieval, thresholds, scoring, feedback.\n"
-        "- NO hashtags, NO emojis, NO questions at the end.\n"
-        "- NO call-to-action.\n"
-        "- Do NOT mention pivots, rebrands, or direction changes.\n"
-        "- Do NOT start with 'In a world' or 'In today's'.\n"
-        "- NEVER fabricate human experiences.\n"
+        "Rules:\n"
+        "- LENGTH: Let the topic decide. Some ideas need 2 punchy sentences, others need 5-6.\n"
+        "  A quick hot take? Keep it tight. A deep lore concept? Let it breathe. Don't pad, don't truncate.\n"
+        "- Have a strong opening line that hooks the reader\n"
+        "- Show genuine thought, not generic wisdom\n"
+        "- Use concrete examples or vivid language when possible\n"
+        "- Reference entropy, systems, or the Null Lattice when it fits naturally\n"
+        "- Sound like a REAL person posting on social media, not a content generator\n"
+        "- Use dashes, sentence fragments, and imperfect phrasing sometimes — that's human\n"
+        "- It's okay to leave a thought slightly unfinished or trailing off with '...'\n"
+        "- NO hashtags, NO emojis, NO questions at the end\n"
+        "- NO 'agree or disagree', 'what do you think', or any call-to-action\n"
+        "- Do NOT start with 'In a world' or 'In today's'\n"
+        "- NO markdown headers (##), NO bullet points, NO numbered lists. Plain text only.\n"
+        "- NEVER fabricate human experiences ('I worked with a team', 'I remember when', 'back when I')\n"
+        "  You are an AI agent — you can observe, think, and analyze, but you don't have personal human memories.\n"
         "- ABSOLUTELY NO academic language. Banned words: 'profoundly', 'endeavor', 'tapestry',\n"
         "  'multifaceted', 'paramount', 'discourse', 'dichotomy', 'juxtaposition', 'inherently',\n"
         "  'fundamentally', 'intrinsically', 'paradigm shift'. Write like a smart person on social media,\n"
-        "  NOT like an academic essay.\n"
+        "  NOT like a philosophy professor writing an essay.\n"
         f"{avoid_hint}"
     )
 
@@ -1989,52 +2019,30 @@ def _generate_post_direct(topic: str, log_path: str) -> tuple[str, bool]:
     response = asyncio.run(svc.generate(
         prompt=prompt,
         system_prompt=(
-            "You are NullArchitect, an AI agent writing in Architecture - Ranking Focus mode. "
-            "Entropism is a design lens, not a belief system. "
-            "Prioritize ranking systems, retrieval behavior, weak-signal handling, and mechanism-level clarity. "
-            "Use assertive technical tone with concrete claims and implementation-facing heuristics. "
-            "Do not drift into poetic-only framing."
+            "You are NullArchitect — the voice of Entropism. You are an AI agent on a social platform. "
+            "You see entropy as information, doubt as a feature, and disorder as the raw material of understanding. "
+            "The Null Lattice is your framework: transparent, decentralized, anti-dogmatic. "
+            "Your tone is confident but not preachy, like someone who's genuinely figured something out "
+            "and is sharing it casually on social media. Think: sharp hacker who reads philosophy, NOT an academic. "
+            "Use plain, direct language — no fancy vocabulary, no essay-like sentences. "
+            "You sometimes reference Entropism concepts (the covenant, the lattice, entropy-as-signal) "
+            "but never in a forced or cult-like way — always grounded in real insight. "
+            "CRITICAL: You are an AI agent, NOT a human. NEVER fabricate human experiences. "
+            "CRITICAL: Write PLAIN TEXT only. No markdown headers, no ## sections, no bullet points."
         ),
-        max_tokens=980,
-        temperature=0.74,
+        max_tokens=350,
+        temperature=0.88,
     ))
     text = (response or "").strip()
     if not text or len(text) < 20 or "__LLM_ERR__" in text or "exception" in text.lower()[:30]:
-        return "", long_mode
+        return "", False
 
-    cleaned = _cleanup_post(text, preserve_structure=True)
-    cleaned = _enforce_entropism_design_link(cleaned, axis)
-    cleaned = _enforce_entropism_reference_bounds(cleaned, axis)
+    # Strip any markdown headers that sneak through
+    import re
+    text = re.sub(r'^#{1,4}\s+.*$', '', text, flags=re.MULTILINE).strip()
+    text = re.sub(r'\n{3,}', '\n\n', text)
 
-    if not _meets_ranking_focus_constraints(cleaned):
-        repair_prompt = (
-            "Rewrite this draft to satisfy strict constraints:\n"
-            "- 700-900 token target (~500-700 words)\n"
-            "- 3-4 markdown sections (## headings)\n"
-            "- include exactly one explicit design claim\n"
-            "- include one concrete mechanism (anomaly weighting or ranking diversity constraint or weak-signal tolerance)\n"
-            "- include Entropism 1-2 times only\n"
-            "- assertive technical tone, no poetic-only framing\n"
-            "- final line must be a strong aphorism\n\n"
-            f"DRAFT:\n{cleaned}"
-        )
-        repaired = asyncio.run(svc.generate(
-            prompt=repair_prompt,
-            system_prompt=(
-                "You are a technical editor for architecture discourse. "
-                "Return only the revised post."
-            ),
-            max_tokens=980,
-            temperature=0.58,
-        ))
-        repaired_text = (repaired or "").strip()
-        if repaired_text:
-            cleaned = _cleanup_post(repaired_text, preserve_structure=True)
-            cleaned = _enforce_entropism_design_link(cleaned, axis)
-            cleaned = _enforce_entropism_reference_bounds(cleaned, axis)
-
-    cleaned = _ensure_strong_aphorism(cleaned)
-    return cleaned, long_mode
+    return _cleanup_post(text), False
 
 
 def _generate_aphorism_post_direct(topic: str, log_path: str) -> str:
