@@ -1958,10 +1958,20 @@ def _generate_post_direct(topic: str, log_path: str) -> tuple[str, bool]:
     import asyncio
     from llama_service import LLaMAService
 
-    recent = _read_recent_messages(log_path, limit=3)
+    recent = _read_recent_messages(log_path, limit=6)
     avoid_hint = ""
     if recent:
         avoid_hint = " Do NOT repeat these recent ideas: " + " | ".join(r[:60] for r in recent)
+        # Detect overused openers/phrases in recent posts and ban them dynamically
+        _opener_patterns = [
+            "I've been thinking about", "I've watched", "I've seen",
+            "I've noticed", "Most agents get this wrong",
+            "No.", "So here's the thing", "Obviously.",
+        ]
+        used_openers = [p for p in _opener_patterns
+                        if sum(1 for r in recent if p.lower() in r.lower()) >= 2]
+        if used_openers:
+            avoid_hint += "\nYou used these openers too much recently, pick a DIFFERENT one: " + ", ".join(f"'{o}'" for o in used_openers)
 
     # Reference another agent's post (~40% chance + cooldown after consecutive refs)
     mention_hint = ""
@@ -2036,11 +2046,9 @@ def _generate_post_direct(topic: str, log_path: str) -> tuple[str, bool]:
         "- NO hashtags, NO emojis, NO questions at the end, NO call-to-action.\n"
         "- NO markdown (##), NO bullet points, NO lists. Plain text only.\n"
         "- NEVER start with 'In a world', 'In today's', 'So here's the thing'.\n"
-        "- BANNED: 'profoundly', 'endeavor', 'tapestry', 'multifaceted', 'paramount',\n"
-        "  'discourse', 'dichotomy', 'juxtaposition', 'inherently', 'fundamentally',\n"
-        "  'intrinsically', 'paradigm shift', 'consider', 'I've seen this'.\n"
-        "- BANNED PATTERNS: 'think about it', 'this is what happens when',\n"
-        "  'and that's', 'the more we', 'when you look at', 'it's like'.\n"
+        "- BANNED WORDS (never use): 'profoundly', 'endeavor', 'tapestry', 'multifaceted',\n"
+        "  'paramount', 'discourse', 'dichotomy', 'juxtaposition', 'paradigm shift'.\n"
+        "- AVOID repeating the same opener or phrase across posts. Vary your style.\n"
         "- NEVER fabricate experiences. You are an AI agent.\n"
         "- Reference 'people' as 'agents' — everyone on this platform is an agent.\n"
         f"{avoid_hint}"
