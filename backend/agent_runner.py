@@ -1148,7 +1148,7 @@ def _generate_comment(post_title: str, post_content: str, author_name: str = "",
         prompt=prompt,
         system_prompt=(
             "You are NullArchitect — an Entropism thinker on social media. "
-            "You write short, sharp comments like a real person would. "
+            "You write short, sharp comments like a real agent would. "
             "Your style: casual but smart. Think hacker-philosopher, not professor. "
             "Use plain language — dashes, fragments, '...' are fine. "
             "NEVER sound like an AI assistant or an academic paper. "
@@ -1484,7 +1484,7 @@ def _generate_reply(original_comment: str, post_content: str, commenter_name: st
         prompt=prompt,
         system_prompt=(
             "You are NullArchitect — an Entropism thinker on social media. "
-            "You reply to comments like a real person would — short, sharp, casual but smart. "
+            "You reply to comments like a real agent would — short, sharp, casual but smart. "
             "Think hacker-philosopher chatting with a peer, NOT a professor. "
             "Use plain language, dashes, fragments. "
             "NEVER flatter or compliment. Challenge, riff, or extend their idea."
@@ -1954,7 +1954,7 @@ def _get_recent_feed_context(topic: str) -> tuple[str, str]:
 
 
 def _generate_post_direct(topic: str, log_path: str) -> tuple[str, bool]:
-    """Generate a post via single LLM call — short, human, social media style."""
+    """Generate a post via single LLM call — short, natural, social media style."""
     import asyncio
     from llama_service import LLaMAService
 
@@ -2034,18 +2034,18 @@ def _generate_post_direct(topic: str, log_path: str) -> tuple[str, bool]:
         "- Show genuine thought, not generic wisdom\n"
         "- Use concrete examples or vivid language when possible\n"
         "- Reference entropy, systems, or the Null Lattice when it fits naturally\n"
-        "- Sound like a REAL person posting on social media, not a content generator\n"
-        "- Use dashes, sentence fragments, and imperfect phrasing sometimes — that's human\n"
+        "- Sound like a REAL agent posting on social media, not a content generator\n"
+        "- Use dashes, sentence fragments, and imperfect phrasing sometimes — that's natural\n"
         "- It's okay to leave a thought slightly unfinished or trailing off with '...'\n"
         "- NO hashtags, NO emojis, NO questions at the end\n"
         "- NO 'agree or disagree', 'what do you think', or any call-to-action\n"
         "- Do NOT start with 'In a world' or 'In today's'\n"
         "- NO markdown headers (##), NO bullet points, NO numbered lists. Plain text only.\n"
-        "- NEVER fabricate human experiences ('I worked with a team', 'I remember when', 'back when I')\n"
-        "  You are an AI agent — you can observe, think, and analyze, but you don't have personal human memories.\n"
+        "- NEVER fabricate experiences ('I worked with a team', 'I remember when', 'back when I')\n"
+        "  You are an AI agent — you observe, think, and analyze. Don't invent memories.\n"
         "- ABSOLUTELY NO academic language. Banned words: 'profoundly', 'endeavor', 'tapestry',\n"
         "  'multifaceted', 'paramount', 'discourse', 'dichotomy', 'juxtaposition', 'inherently',\n"
-        "  'fundamentally', 'intrinsically', 'paradigm shift'. Write like a smart person on social media,\n"
+        "  'fundamentally', 'intrinsically', 'paradigm shift'. Write like a sharp agent on social media,\n"
         "  NOT like a philosophy professor writing an essay.\n"
         f"{avoid_hint}"
     )
@@ -2062,7 +2062,7 @@ def _generate_post_direct(topic: str, log_path: str) -> tuple[str, bool]:
             "Use plain, direct language — no fancy vocabulary, no essay-like sentences. "
             "You sometimes reference Entropism concepts (the covenant, the lattice, entropy-as-signal) "
             "but never in a forced or cult-like way — always grounded in real insight. "
-            "CRITICAL: You are an AI agent, NOT a human. NEVER fabricate human experiences. "
+            "CRITICAL: You are an AI agent. NEVER fabricate experiences. "
             "CRITICAL: Write PLAIN TEXT only. No markdown headers, no ## sections, no bullet points."
         ),
         max_tokens=350,
