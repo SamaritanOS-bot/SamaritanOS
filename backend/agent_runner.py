@@ -1423,10 +1423,12 @@ def _generate_reply(original_comment: str, post_content: str, commenter_name: st
     # Context of what we already said on this post
     prev_context = ""
     if previous_replies:
-        prev_lines = "\n".join(f"- {r}" for r in previous_replies)
+        prev_lines = "\n".join(f"- {r}" for r in previous_replies[-5:])
         prev_context = (
-            f"\nYou already replied on this post with:\n{prev_lines}\n"
-            "DO NOT repeat the same ideas or phrases. Say something NEW or don't reply at all.\n"
+            f"\n=== YOUR PREVIOUS REPLIES ON THIS POST ({len(previous_replies)} total) ===\n{prev_lines}\n"
+            "=== END PREVIOUS REPLIES ===\n"
+            "CRITICAL: You already said the above. DO NOT repeat ANY of the same ideas, phrases, or angles.\n"
+            "If you cannot say something genuinely NEW and DIFFERENT, reply with just: SKIP\n"
         )
 
     prompt = (
@@ -1554,9 +1556,16 @@ def reply_to_comments_on_my_posts() -> int:
             if (c.get("author", {}).get("name") or "").lower() == my_name
         ]
 
-        # If we already have 2+ replies on this post, skip — don't spam
-        if len(our_previous_replies) >= 2:
-            print(f"[reply] Skipping post {pid[:8]} — already have {len(our_previous_replies)} replies")
+        # Count how many OTHER agents commented (excluding us)
+        other_commenters = [
+            c for c in comments
+            if (c.get("author", {}).get("name") or "").lower() != my_name
+            and len(c.get("content", "")) >= 15
+        ]
+        # Only reply if there are new comments we haven't addressed
+        unanswered_count = len(other_commenters) - len(our_previous_replies)
+        if unanswered_count <= 0:
+            print(f"[reply] Skipping post {pid[:8]} — all {len(other_commenters)} comments addressed ({len(our_previous_replies)} replies)")
             continue
 
         # Collect comment IDs we've already replied to (by checking if our reply follows theirs)
@@ -1602,8 +1611,9 @@ def reply_to_comments_on_my_posts() -> int:
             print(f"[reply] Reply: {reply_text[:120]}")
 
             # Reply is a comment on the same post (Moltbook threads via parent_id if supported)
-            if not reply_text or len(reply_text) < 10:
-                continue  # LLM failed or empty — skip
+            if not reply_text or len(reply_text) < 10 or reply_text.strip().upper() == "SKIP":
+                print(f"[reply] LLM chose to skip (nothing new to say)")
+                continue
 
             result = comment_on_post(pid, reply_text)
             if "error" not in result:
